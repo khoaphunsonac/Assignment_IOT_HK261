@@ -23,10 +23,12 @@ Bài tập lớn môn Internet of Things, học kỳ 261.
 
 ```bash
 npm install
-(cd App/BE-web && npm install && cp .env.example .env)
+(cd App/BE-web && npm install && cp .env.example .env && npm run db:up && npm run db:migrate)
 (cd App/FE-web && npm install && cp .env.example .env.local)
 npm run dev
 ```
+
+Cần cài Docker để chạy MySQL local. Xem thêm [App/BE-web/README.md](App/BE-web/README.md).
 
 Danh sách công việc: [docs/ISSUES.md](docs/ISSUES.md).
 
