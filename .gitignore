@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+*.local.json
+
+# Build outputs
+.next/
+dist/
+build/
+.pio/
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# LaTeX build outputs
+Report/build/
+Report/*.aux
+Report/*.out
+Report/*.toc
+Report/*.fls
+Report/*.fdb_latexmk
+Report/*.synctex.gz
+
+# Node/Next generated
+coverage/
+next-env.d.ts
+*.tsbuildinfo
