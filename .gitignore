@@ -33,3 +33,9 @@ Report/*.synctex.gz
 coverage/
 next-env.d.ts
 *.tsbuildinfo
+
+# IoT secrets and Python
+secrets.h
+__pycache__/
+.venv/
+venv/

@@ -1,35 +1,65 @@
-# Assignment IoT HK261
+# Assignment IoT HK261 – Nhóm 4
 
-Bài tập lớn môn Internet of Things, học kỳ 261.
+Bài tập lớn môn Phát triển ứng dụng IoT (CO3038), học kỳ 261.
+
+**Đề tài:** Giám sát và điều hòa phòng học, dùng ESP-NOW, TinyML và OTA.
+
+Node A đo nhiệt độ, độ ẩm, ánh sáng, chuyển động và chạy TinyML. Node A gửi số đo qua ESP-NOW cho Node B. Node B điều khiển quạt, đèn, LCD, chạy webserver và gửi dữ liệu qua MQTT cho Gateway Python trên laptop. Gateway đẩy dữ liệu lên CoreIOT, nhận lệnh và ngưỡng từ dashboard và RuleChain, chạy AI phát hiện sự kiện, phân phối OTA cho Node B.
 
 ```
-.
-├── App/
-│   ├── BE-web/   # Backend web
-│   ├── FE-web/   # Frontend web
-│   └── IOT/      # Firmware, AI, cấu hình CoreIOT
-└── Report/       # Báo cáo LaTeX
+Node A ──ESP-NOW──> Node B ──MQTT (Mosquitto)──> Gateway Python ──> CoreIOT
+(cảm biến, TinyML)  (quạt, đèn, LCD, web)          │                (dashboard, RuleChain)
+                                                   └──> Giao diện local
 ```
 
-| Phần | Hướng dẫn |
+## Đọc trước khi code
+
+| File | Nội dung |
 |---|---|
-| Ứng dụng | [App/README.md](App/README.md) |
-| Backend | [App/BE-web/README.md](App/BE-web/README.md) |
-| Frontend | [App/FE-web/README.md](App/FE-web/README.md) |
-| IoT | [App/IOT/README.md](App/IOT/README.md) |
-| Báo cáo | [Report/README.md](Report/README.md) |
+| [docs/CONTRACT.md](docs/CONTRACT.md) | **Bắt buộc.** Topic MQTT, key, lệnh, gói ESP-NOW. Code của mọi người phải khớp file này |
+| [GitHub Issues](https://github.com/khoaphunsonac/Assignment_IOT_HK261/issues) | Việc từng tuần, milestone W1–W5 |
+| [App/IOT/README.md](App/IOT/README.md) | Phần cứng, chân, cách build và nạp firmware |
 
-## Chạy phần web
+## Thành viên
 
-```bash
-npm install
-(cd App/BE-web && npm install && cp .env.example .env && npm run db:up && npm run db:migrate)
-(cd App/FE-web && npm install && cp .env.example .env.local)
-npm run dev
+| Vai | Người | Phần giữ |
+|---|---|---|
+| TV1 – Lead + Firmware | Minh | Node A, Node B, ESP-NOW, TinyML trên chip, OTA phía thiết bị |
+| TV2 – Gateway | Mai Anh Tuấn | Broker MQTT, cầu nối CoreIOT, phân phối OTA, `fake_node_b.py` |
+| TV3 – AI + giao diện | Hà Minh Phú | AI trên Gateway, giao diện local, thu dữ liệu và train TinyML |
+| TV4 – CoreIOT + Webserver | Trần Đăng Khoa | Webserver Node B, dashboard, RuleChain, cảnh báo |
+
+## Cấu trúc thư mục
+
+```
+docs/CONTRACT.md            quy ước dữ liệu và giao thức dùng chung
+App/
+  IOT/
+    firmware/
+      common/               espnow_packet.h dùng chung 2 node
+      node_a/               project PlatformIO Node A
+      node_b/               project PlatformIO Node B
+    gateway/                Python: bridge CoreIOT, OTA server, AI, giao diện, fake_node_b.py
+    ai/
+      data/                 CSV thu được
+      train/                script train TinyML
+      models/               .tflite và .h đã xuất
+    coreiot/                export JSON của dashboard, RuleChain
+    docs/                   pinout, ghi chú phần cứng
+  BE-web/, FE-web/          web app, CHỈ làm nếu IoT chạy đủ trước CN 29/11
+Report/                     báo cáo LaTeX, Report/data/ chứa số liệu đo
 ```
 
-Cần cài Docker để chạy MySQL local. Xem thêm [App/BE-web/README.md](App/BE-web/README.md).
+## Quy ước làm việc
 
-Danh sách công việc: [docs/ISSUES.md](docs/ISSUES.md).
+- **Docs** (`docs/`, `Report/`, README): push thẳng `main`. Nhớ `git pull` trước khi sửa.
+- **Code:** mỗi issue một branch, tên theo số issue, ví dụ `12-espnow-retry`. Xong mở PR có dòng `Closes #12` và minh chứng (log, ảnh, video). Minh duyệt rồi merge.
+- **Commit** bằng tài khoản GitHub của chính mình (thông báo BTL yêu cầu lịch sử commit thể hiện ai làm gì).
+- **Bí mật:** mật khẩu WiFi và token CoreIOT chỉ để trong `secrets.h` hoặc `.env` (đã có trong `.gitignore`). Repo public, commit nhầm là lộ.
+- **Dùng AI:** ai dùng cho phần nào thì ghi lại để đưa vào báo cáo.
 
-Không commit mật khẩu, token hoặc API key. Dùng file `.env` hoặc `*.local.json`, đã được Git bỏ qua.
+## Nộp bài
+
+- Báo cáo PDF `[Mã lớp]_[Mã nhóm]_BaoCaoIoT.pdf`: xem [Report/README.md](Report/README.md).
+- Video demo 5–10 phút.
+- Repo này, có README.

@@ -2,7 +2,7 @@
 
 Backend REST API, viết bằng Node.js, Express và Sequelize (MySQL).
 
-Đây là sườn dự án: các API đang trả về `501 Not implemented`. Phần chi tiết xem tại [docs/ISSUES.md](../../docs/ISSUES.md).
+Đây là sườn dự án: các API đang trả về `501 Not implemented`. Web app chỉ làm nếu phần IoT chạy đủ trước CN 29/11 (xem README gốc).
 
 ## Cài đặt và chạy
 

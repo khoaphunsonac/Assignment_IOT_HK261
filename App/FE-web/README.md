@@ -2,7 +2,7 @@
 
 Giao diện web, viết bằng Next.js 14, React 18, TypeScript và Tailwind CSS.
 
-Đây là sườn dự án: các trang mới là trang chờ. Phần chi tiết xem tại [docs/ISSUES.md](../../docs/ISSUES.md).
+Đây là sườn dự án: các trang mới là trang chờ. Web app chỉ làm nếu phần IoT chạy đủ trước CN 29/11 (xem README gốc).
 
 ## Cài đặt và chạy
 
