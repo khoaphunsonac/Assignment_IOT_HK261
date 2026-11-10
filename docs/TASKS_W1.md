@@ -14,19 +14,19 @@
 
 | Người | Issue | Tên nhánh |
 |---|---|---|
-| Minh | #3 | `3-node-a-sensor-espnow` |
-| Tuấn | #4 | `4-fake-node-b` |
-| Tuấn | #5 | `5-gateway-t15` |
-| Phú | #7 | `7-tinyml-retrain` |
-| Phú | #8 | `8-streamlit-ui` |
-| Khoa | #9 | `9-coreiot-dashboard` |
-| Khoa | #10 | `10-webserver-standalone` |
+| Minh | #26 | `26-node-a-sensor-espnow` |
+| Tuấn | #27 | `27-fake-node-b` |
+| Tuấn | #28 | `28-gateway-t15` |
+| Phú | #30 | `30-tinyml-retrain` |
+| Phú | #31 | `31-streamlit-ui` |
+| Khoa | #32 | `32-coreiot-dashboard` |
+| Khoa | #33 | `33-webserver-standalone` |
 
 Tạo nhánh từ `main` mới nhất:
 ```bash
 git checkout main
 git pull origin main
-git checkout -b 4-fake-node-b
+git checkout -b 27-fake-node-b
 ```
 
 ### 1.2. Commit
@@ -44,10 +44,10 @@ Commit bằng **tài khoản GitHub của chính mình**. Thông báo BTL yêu c
 
 ### 1.3. Pull Request
 ```bash
-git push -u origin 4-fake-node-b
+git push -u origin 27-fake-node-b
 ```
 Lên GitHub tạo PR vào `main`. Mô tả PR phải có:
-1. Dòng `Closes #4` (merge xong issue tự đóng).
+1. Dòng `Closes #27` (merge xong issue tự đóng).
 2. **Minh chứng:** ảnh màn hình, log hoặc video ngắn, đúng mục "Xong khi" của issue.
 3. Cách chạy lại (lệnh gì).
 
@@ -64,18 +64,18 @@ Minh review rồi merge. Đừng tự merge PR của mình.
 
 | # | Việc | Người | Giờ | Hạn | Chờ |
 |---|---|---|---|---|---|
-| 1 | Khung repo + 2 project PlatformIO + file bí mật mẫu | Minh | 1.5h | 11/11 | — |
-| 2 | `docs/CONTRACT.md` | Minh | — | **xong** | — |
-| 3 | Node A: đọc cảm biến + gửi ESP-NOW | Minh | 6h | 15/11 | — |
-| 4 | `fake_node_b.py` | Tuấn | 3h | **12/11** | — |
-| 5 | Thử T15: Gateway CoreIOT với 2 thiết bị con | Tuấn | 5–6h | 15/11 | #4 |
-| 6 | Kiểm tra OTA của CoreIOT cho thiết bị sau Gateway | Tuấn | 1–2h | 15/11 | #5 |
-| 7 | Train lại model TinyML | Phú | 4–5h | 15/11 | — |
-| 8 | Khung giao diện Streamlit | Phú | 4–5h | 15/11 | #4 |
-| 9 | Dashboard CoreIOT với dữ liệu giả | Khoa | 3–4h | 15/11 | — |
-| 10 | Webserver Node B bản đứng riêng | Khoa | 4–5h | 15/11 | — |
+| 24 | Khung repo + 2 project PlatformIO + file bí mật mẫu | Minh | 1.5h | 11/11 | — |
+| 25 | `docs/CONTRACT.md` | Minh | — | **xong** | — |
+| 26 | Node A: đọc cảm biến + gửi ESP-NOW | Minh | 6h | 15/11 | — |
+| 27 | `fake_node_b.py` | Tuấn | 3h | **12/11** | — |
+| 28 | Thử T15: Gateway CoreIOT với 2 thiết bị con | Tuấn | 5–6h | 15/11 | #27 |
+| 29 | Kiểm tra OTA của CoreIOT cho thiết bị sau Gateway | Tuấn | 1–2h | 15/11 | #28 |
+| 30 | Train lại model TinyML | Phú | 4–5h | 15/11 | — |
+| 31 | Khung giao diện Streamlit | Phú | 4–5h | 15/11 | #27 |
+| 32 | Dashboard CoreIOT với dữ liệu giả | Khoa | 3–4h | 15/11 | — |
+| 33 | Webserver Node B bản đứng riêng | Khoa | 4–5h | 15/11 | — |
 
-**#4 chặn Phú và Tuấn (#5)**, nên Tuấn làm #4 trước tiên, xong trước tối 12/11. Trong lúc chờ, Phú làm #7, Khoa làm #9 và #10.
+**#27 chặn Phú và Tuấn (#28)**, nên Tuấn làm #27 trước tiên, xong trước tối 12/11. Trong lúc chờ, Phú làm #30, Khoa làm #32 và #33.
 
 ---
 
@@ -120,7 +120,7 @@ Gửi thử một lệnh:
 
 ## 4. Minh (TV1 – Lead + Firmware)
 
-### #1 Khung repo (còn lại sau bản dọn repo)
+### #24 Khung repo (còn lại sau bản dọn repo)
 - [x] Cây thư mục, README, `.gitignore` (đã push).
 - [ ] `App/IOT/firmware/node_a/` và `node_b/`: project PlatformIO, `platformio.ini` có:
   ```ini
@@ -141,8 +141,8 @@ Gửi thử một lệnh:
 
 **Xong khi:** 2 project build SUCCESS, `git status` không thấy file bí mật.
 
-### #3 Node A: đọc cảm biến + gửi ESP-NOW
-Nhánh `3-node-a-sensor-espnow`. File:
+### #26 Node A: đọc cảm biến + gửi ESP-NOW
+Nhánh `26-node-a-sensor-espnow`. File:
 | File | Nội dung |
 |---|---|
 | `firmware/common/espnow_packet.h` | Chép đúng mục 3 CONTRACT |
@@ -162,8 +162,8 @@ Thứ tự:
 
 ## 5. Tuấn (TV2 – Gateway)
 
-### #4 `fake_node_b.py` — hạn **12/11**
-Nhánh `4-fake-node-b`. File `App/IOT/gateway/fake_node_b.py`.
+### #27 `fake_node_b.py` — hạn **12/11**
+Nhánh `27-fake-node-b`. File `App/IOT/gateway/fake_node_b.py`.
 
 **Mục đích:** giả Node B **đúng 100%** CONTRACT mục 4–9, để Phú, Khoa và chính Tuấn làm việc khi chưa có board.
 
@@ -217,8 +217,8 @@ while True:
 
 **Xong khi:** PR có ảnh `mosquitto_sub` thấy đủ 5 dòng trên, README ngắn trong `App/IOT/gateway/` (cài gì, chạy lệnh gì). Nhắn Phú và Khoa chạy thử.
 
-### #5 Thử T15: Gateway CoreIOT với 2 thiết bị con
-Nhánh `5-gateway-t15`. File `App/IOT/gateway/bridge.py`. Tài liệu: slide thầy `01_Slides/IoT_Gateway_RuleChain_VN.pptx`, CONTRACT mục 11.
+### #28 Thử T15: Gateway CoreIOT với 2 thiết bị con
+Nhánh `28-gateway-t15`. File `App/IOT/gateway/bridge.py`. Tài liệu: slide thầy `01_Slides/IoT_Gateway_RuleChain_VN.pptx`, CONTRACT mục 11.
 
 Bước:
 1. app.coreiot.io → Entities → Gateways → tạo `room1-gateway`. Lấy Access Token, ghi vào `App/IOT/gateway/.env` (`COREIOT_TOKEN=...`).
@@ -233,7 +233,7 @@ Bước:
 
 **Xong khi:** PR có 2 ảnh trên. **Không làm được thì báo nhóm ngay trong tuần** (T15 là 2 điểm, phải biết sớm để đổi hướng).
 
-### #6 Kiểm tra OTA của CoreIOT cho thiết bị sau Gateway
+### #29 Kiểm tra OTA của CoreIOT cho thiết bị sau Gateway
 Không cần nhánh, kết quả ghi bằng comment trong issue. Trả lời 3 câu:
 1. CoreIOT có mục OTA updates (upload file `.bin`, gán cho device/device profile) không? Chụp màn hình.
 2. Gán firmware cho thiết bị con `room1-node-b` được không? Gateway nhận thông báo qua topic nào (thường là shared attribute `fw_title`, `fw_version`, `fw_checksum`... qua `v1/gateway/attributes`)?
@@ -245,8 +245,8 @@ Nếu câu 2 không được: đề xuất phương án dự phòng ở mục 10
 
 ## 6. Phú (TV3 – AI + giao diện)
 
-### #7 Train lại model TinyML
-Nhánh `7-tinyml-retrain`.
+### #30 Train lại model TinyML
+Nhánh `30-tinyml-retrain`.
 
 **Vì sao:** model `.h` của thầy đoán **ngược nhãn**. Đã kiểm 10/11 trên PC (ai-edge-litert), khớp với kết quả trên board:
 | Input (nhiệt, ẩm) | Nhãn đúng | Model thầy trả |
@@ -277,8 +277,8 @@ Lưu ý: CSV chỉ có 35 dòng, nên accuracy chưa có ý nghĩa thống kê. 
 
 **Xong khi:** PR có output của `check_model.py`: (80, 20) ra gần 1, (25, 60) ra gần 0, cùng confusion matrix và nội dung `norm.json`.
 
-### #8 Khung giao diện Streamlit
-Nhánh `8-streamlit-ui`. File `App/IOT/gateway/ui/app.py`. Cài `pip install "streamlit>=1.37"` (cần bản có `st.fragment`). Chạy `streamlit run App/IOT/gateway/ui/app.py`. Chờ #4 xong để có dữ liệu.
+### #31 Khung giao diện Streamlit
+Nhánh `31-streamlit-ui`. File `App/IOT/gateway/ui/app.py`. Cài `pip install "streamlit>=1.37"` (cần bản có `st.fragment`). Chạy `streamlit run App/IOT/gateway/ui/app.py`. Chờ #27 xong để có dữ liệu.
 
 **Khung gợi ý:**
 ```python
@@ -313,8 +313,8 @@ live()
 
 ## 7. Khoa (TV4 – CoreIOT + Webserver)
 
-### #9 Dashboard CoreIOT với dữ liệu giả
-Nhánh `9-coreiot-dashboard`. Làm ngay, không chờ Gateway.
+### #32 Dashboard CoreIOT với dữ liệu giả
+Nhánh `32-coreiot-dashboard`. Làm ngay, không chờ Gateway.
 
 1. app.coreiot.io → tạo device tạm `room1-test`, lấy Access Token (để trong `.env`, **không** commit).
 2. Viết `App/IOT/coreiot/fake_telemetry.py`: publish `v1/devices/me/telemetry` mỗi 2 giây, giống LAB1, **đúng key ở CONTRACT mục 5**.
@@ -323,18 +323,18 @@ Nhánh `9-coreiot-dashboard`. Làm ngay, không chờ Gateway.
    - Biểu đồ đường: `temperature`, `humidity`.
    - Trạng thái: `fan_level`, `light_on`, `mode`, `anomaly_score`.
    - Điều khiển: nút/slider gọi RPC `setFan`, công tắc gọi `setLight`, `setMode` (tên method đúng CONTRACT 6.2). Tuần này bấm sẽ timeout vì chưa có ai nghe, như vậy là bình thường.
-4. Dùng **alias** cho nguồn dữ liệu (Entity alias), để khi Gateway của Tuấn xong (#5) chỉ cần đổi alias sang `room1-node-a` / `room1-node-b`, không phải làm lại widget.
+4. Dùng **alias** cho nguồn dữ liệu (Entity alias), để khi Gateway của Tuấn xong (#28) chỉ cần đổi alias sang `room1-node-a` / `room1-node-b`, không phải làm lại widget.
 5. Export dashboard ra JSON (Dashboard → Export) vào `App/IOT/coreiot/dashboard_room1.json`.
 
 **Xong khi:** PR có ảnh dashboard có số chạy, file JSON và `fake_telemetry.py`.
 
-### #10 Webserver Node B bản đứng riêng
-Nhánh `10-webserver-standalone`. Nguồn mẫu: `07_Labs/LAB4_Webserver/mainserver.cpp` (dùng `WebServer.h`, `server.on(...)`, `server.handleClient()`).
+### #33 Webserver Node B bản đứng riêng
+Nhánh `33-webserver-standalone`. Nguồn mẫu: `07_Labs/LAB4_Webserver/mainserver.cpp` (dùng `WebServer.h`, `server.on(...)`, `server.handleClient()`).
 
 **File:**
 | File | Nội dung |
 |---|---|
-| `App/IOT/firmware/webserver_test/platformio.ini` | Giống mẫu ở #1 (6.9.0, `monitor_dtr = 0`) |
+| `App/IOT/firmware/webserver_test/platformio.ini` | Giống mẫu ở #24 (6.9.0, `monitor_dtr = 0`) |
 | `.../webserver_test/include/control.h` | **Chép đúng** CONTRACT mục 12, không sửa |
 | `.../webserver_test/src/control_stub.cpp` | Bản giả: lưu trạng thái trong biến, `control_get_sensors()` trả số ngẫu nhiên |
 | `.../webserver_test/src/web.cpp` | Task webserver |
