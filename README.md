@@ -46,14 +46,13 @@ App/
       models/               .tflite và .h đã xuất
     coreiot/                export JSON của dashboard, RuleChain
     docs/                   pinout, ghi chú phần cứng
-  BE-web/, FE-web/          web app, CHỈ làm nếu IoT chạy đủ trước CN 29/11
 Report/                     báo cáo LaTeX, Report/data/ chứa số liệu đo
 ```
 
 ## Quy ước làm việc
 
 - **Docs** (`docs/`, `Report/`, README): push thẳng `main`. Nhớ `git pull` trước khi sửa.
-- **Code:** mỗi issue một branch, tên theo số issue, ví dụ `12-espnow-retry`. Xong mở PR có dòng `Closes #12` và minh chứng (log, ảnh, video). Minh duyệt rồi merge.
+- **Code:** mỗi issue một branch, tên theo số issue, ví dụ `26-node-a-sensor-espnow`. Xong mở PR có dòng `Closes #26` và minh chứng (log, ảnh, video). Minh duyệt rồi merge.
 - **Commit** bằng tài khoản GitHub của chính mình (thông báo BTL yêu cầu lịch sử commit thể hiện ai làm gì).
 - **Bí mật:** mật khẩu WiFi và token CoreIOT chỉ để trong `secrets.h` hoặc `.env` (đã có trong `.gitignore`). Repo public, commit nhầm là lộ.
 - **Dùng AI:** ai dùng cho phần nào thì ghi lại để đưa vào báo cáo.
