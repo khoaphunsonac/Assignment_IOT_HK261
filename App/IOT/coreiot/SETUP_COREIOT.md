@@ -20,7 +20,7 @@ Key, method RPC và tên thiết bị theo [docs/CONTRACT.md](../../../docs/CONT
 
 ```powershell
 cd App\IOT\coreiot
-pip install paho-mqtt python-dotenv
+pip install paho-mqtt==1.6.1
 copy .env.example .env      # dán token vào COREIOT_TEST_TOKEN
 python fake_telemetry.py
 ```
