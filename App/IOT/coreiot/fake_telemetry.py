@@ -5,7 +5,7 @@ khi chưa có Gateway. Đồng thời nhận RPC (setFan, setLight, setMode, get
 để thử các nút điều khiển trên dashboard.
 
 Cách chạy:
-    pip install paho-mqtt python-dotenv
+    pip install paho-mqtt==1.6.1
     copy .env.example .env      # rồi dán Access Token của room1-test
     python fake_telemetry.py
 """
@@ -18,12 +18,19 @@ from pathlib import Path
 
 import paho.mqtt.client as mqtt
 
-try:
-    from dotenv import load_dotenv
+def load_env(path):
+    """Đọc .env dạng KEY=VALUE, không cần python-dotenv. Biến môi trường có sẵn được ưu tiên."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
-    load_dotenv(Path(__file__).with_name(".env"))
-except ImportError:
-    pass
+
+load_env(Path(__file__).with_name(".env"))
 
 HOST = os.getenv("COREIOT_HOST", "app.coreiot.io")
 PORT = int(os.getenv("COREIOT_PORT", "1883"))
