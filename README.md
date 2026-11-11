@@ -24,7 +24,7 @@ Node A ──ESP-NOW──> Node B ──MQTT (Mosquitto)──> Gateway Python 
 
 | Vai | Người | Phần giữ |
 |---|---|---|
-| TV1 – Lead + Firmware | Minh | Node A, Node B, ESP-NOW, TinyML trên chip, OTA phía thiết bị |
+| TV1 – Lead + Firmware | Trần Lê Minh | Node A, Node B, ESP-NOW, TinyML trên chip, OTA phía thiết bị |
 | TV2 – Gateway | Mai Anh Tuấn | Broker MQTT, cầu nối CoreIOT, phân phối OTA, `fake_node_b.py` |
 | TV3 – AI + giao diện | Hà Minh Phú | AI trên Gateway, giao diện local, thu dữ liệu và train TinyML |
 | TV4 – CoreIOT + Webserver | Trần Đăng Khoa | Webserver Node B, dashboard, RuleChain, cảnh báo |

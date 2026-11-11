@@ -14,9 +14,11 @@
 
 | Người | Issue | Tên nhánh |
 |---|---|---|
+| Minh | #24 | `24-repo-skeleton` |
 | Minh | #26 | `26-node-a-sensor-espnow` |
 | Tuấn | #27 | `27-fake-node-b` |
 | Tuấn | #28 | `28-gateway-t15` |
+| Tuấn | #29 | `29-coreiot-ota-check` |
 | Phú | #30 | `30-tinyml-retrain` |
 | Phú | #31 | `31-streamlit-ui` |
 | Khoa | #32 | `32-coreiot-dashboard` |
