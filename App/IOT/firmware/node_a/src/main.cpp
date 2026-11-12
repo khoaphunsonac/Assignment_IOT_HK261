@@ -17,8 +17,8 @@ void task_sensor(void *pvParameters) {
   SensorSample s;
   while (1) {
     sensors_read(&s);
-    // TODO 10: in 1 dòng Serial: T, H, light, presence, valid, dht_fail
-    //          (để kiểm ở lab: hà hơi vào DHT20 -> H tăng, che cảm biến ánh sáng -> light đổi).
+    Serial.printf("[A] T: %.1f H: %.1f light: %u presence: %u valid: %d dht_fail: %u\n",
+    s.temperature, s.humidity, s.light, s.presence, s.valid, s.dht_fail);
     xQueueOverwrite(sample_queue, &s);  // queue 1 phần tử: ghi đè mẫu cũ chưa gửi
     vTaskDelay(SENSOR_PERIOD_MS);
   }
@@ -31,29 +31,69 @@ void task_espnow_tx(void *pvParameters) {
   TxState tx;
   tx_init(&tx);
   uint32_t sent_ok = 0, resend = 0, give_up = 0, repair = 0;  // in ra để làm minh chứng PR
+  unsigned long last = millis();
 
   while (1) {
-    // TODO 11: chưa ghép cặp -> espnow_link_pair(PAIR_TIMEOUT_MS).
-    //          Hụt PAIR_TRIES_BEFORE_SCAN lần liền -> espnow_link_scan_channel(), pair_fail = 0.
-    //          Ghép được -> paired = true, tx_init(&tx). Xong thì continue (chưa lấy mẫu).
+    if(!paired) {
+      if(!espnow_link_pair(PAIR_TIMEOUT_MS)){
+        pair_fail++;
+        if(pair_fail == PAIR_TRIES_BEFORE_SCAN){
+          espnow_link_scan_channel();
+          pair_fail = 0;
+        }
+      } else {
+        paired = true;
+        tx_init(&tx);
+        pair_fail = 0;
+      }
+      continue;
+    }
 
-    // TODO 12: xQueueReceive(sample_queue, &s, portMAX_DELAY).
-    //          s.valid == false -> KHÔNG gửi, KHÔNG tăng seq (Node B sẽ không đếm nhầm là mất gói).
+    SensorSample s;
+    xQueueReceive(sample_queue, &s, portMAX_DELAY);
+    if(!s.valid) continue;
 
-    // TODO 13: điền PktData: hdr (magic, version, PKT_DATA), seq, temperature, humidity,
-    //          light, presence, anomaly = 0, anomaly_score = -1, dht_fail.
+    PktData pd;
+    pd.hdr.magic = ESPNOW_MAGIC;
+    pd.hdr.version = ESPNOW_VERSION;
+    pd.hdr.type = PKT_DATA;
+    pd.seq = seq;
+    pd.temperature = s.temperature;
+    pd.humidity = s.humidity;
+    pd.light = s.light;
+    pd.presence = s.presence;
+    pd.anomaly= 0;
+    pd.anomaly_score = -1;
+    pd.dht_fail = s.dht_fail;
 
-    // TODO 14: vòng gửi:
-    //   ok = espnow_link_send(&pkt); action = tx_on_result(&tx, ok, millis());
-    //   TX_DONE    -> seq++, sent_ok++, đảo LED, thoát vòng
-    //   TX_RESEND  -> resend++, gửi lại CÙNG pkt (không đổi seq)
-    //   TX_GIVE_UP -> seq++, give_up++, thoát vòng
-    //   TX_REPAIR  -> seq++, repair++, espnow_link_unpair(), paired = false, thoát vòng
+    while(true){
+      bool ok = espnow_link_send(&pd);
+      TxAction status = tx_on_result(&tx, ok, millis());
+      if(status == TX_DONE) {
+        seq++;
+        sent_ok++;
+        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+        break;
+      } else if (status == TX_RESEND) {
+        resend++;
+      } else if (status == TX_GIVE_UP) {
+        seq++;
+        give_up++;
+        break;
+      } else if (status == TX_REPAIR) {
+        seq++;
+        repair++;
+        espnow_link_unpair();
+        paired = false;
+        break;
+      }
+    }
 
-    // TODO 15: mỗi ~10 s in 1 dòng: ch, paired, seq, sent_ok, resend, give_up, repair,
-    //          ESP.getMinFreeHeap(). Dòng này chụp làm minh chứng PR.
-
-    vTaskDelay(1000);  // XÓA dòng này khi làm xong TODO 12 (xQueueReceive đã chờ sẵn)
+    if (millis() - last >= 10000) {
+      Serial.printf("[A] ch: %d paired: %d seq: %u sent_ok: %u resend: %u give_up: %u repair: %u free: %u\n",
+      espnow_link_channel(), paired, seq, sent_ok, resend, give_up, repair, ESP.getMinFreeHeap());
+      last = millis();
+    }
   }
 }
 
