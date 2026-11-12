@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <string.h>
 #include "secrets.h"  // WIFI_SSID (firmware/common/secrets.h, chép từ secrets.example.h)
 
 static const uint8_t BCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -25,11 +26,16 @@ static void on_sent(const uint8_t *mac, esp_now_send_status_t status) {
 }
 
 static void on_recv(const uint8_t *mac, const uint8_t *data, int len) {
-  // TODO 6: chỉ nhận PKT_PAIR_RESP hợp lệ:
-  //   len == sizeof(PktPairResp), hdr.magic == ESPNOW_MAGIC, hdr.version == ESPNOW_VERSION,
-  //   hdr.type == PKT_PAIR_RESP. Sai bất kỳ điều kiện nào -> return (gói lạ trong phòng lab).
-  //   Gợi ý: memcpy vào biến PktPairResp trước khi đọc (data có thể không căn hàng 4 byte).
-  //   Hợp lệ: điền PairInfo (mac, channel) rồi xQueueSend(pair_queue, &info, 0).
+  PktPairResp ppr;
+  if (len != sizeof(ppr)) return;
+  memcpy(&ppr, data, sizeof(ppr));
+  if (ppr.hdr.magic != ESPNOW_MAGIC) return;
+  if (ppr.hdr.version != ESPNOW_VERSION) return;
+  if (ppr.hdr.type != PKT_PAIR_RESP) return;
+  PairInfo info;
+  memcpy(info.mac, mac, sizeof(info.mac));
+  info.channel = ppr.channel;
+  xQueueSend(pair_queue, &info, 0);
 }
 
 // ---------- Hàm phụ (đã chạy ở test unicast 11/11) ----------
@@ -91,29 +97,39 @@ void espnow_link_scan_channel() {
 }
 
 bool espnow_link_pair(uint32_t timeout_ms) {
-  // TODO 7:
-  //   1. xQueueReset(pair_queue) (bỏ trả lời cũ còn sót).
-  //   2. Tạo PktPairReq: hdr.magic, hdr.version, hdr.type = PKT_PAIR_REQ.
-  //      esp_now_send(BCAST, ...).
-  //   3. xQueueReceive(pair_queue, &info, timeout_ms). Hết giờ -> return false.
-  //   4. info.channel khác cur_channel -> set_channel(info.channel), cập nhật cur_channel
-  //      (Node B biết channel thật của hotspot).
-  //   5. Chép MAC vào node_b_mac, add_peer(node_b_mac). Lỗi -> return false.
-  //   6. In "[A] GHEP CAP OK voi Node B xx:xx:xx:xx:xx:xx (ch N)" -> return true.
-  return false;
+  xQueueReset(pair_queue);
+  PktPairReq ppr;
+  ppr.hdr.magic = ESPNOW_MAGIC;
+  ppr.hdr.version = ESPNOW_VERSION;
+  ppr.hdr.type = PKT_PAIR_REQ;
+  esp_now_send(BCAST, (const uint8_t *)&ppr, sizeof(PktPairReq));
+  PairInfo info;
+  if(!xQueueReceive(pair_queue, &info, timeout_ms)) return false;
+  if(info.channel != cur_channel) {
+    set_channel(info.channel);
+    cur_channel = info.channel;
+  }
+  memcpy(node_b_mac, info.mac, sizeof(node_b_mac));
+  if(!add_peer(node_b_mac)) return false;
+  Serial.printf("[A] GHEP CAP OK voi Node B %02X:%02X:%02X:%02X:%02X:%02X (ch %d)\n", 
+  node_b_mac[0], node_b_mac[1], node_b_mac[2], node_b_mac[3], node_b_mac[4], node_b_mac[5], info.channel);
+  return true;
 }
 
 bool espnow_link_send(const PktData *pkt) {
-  // TODO 8:
-  //   1. xQueueReset(send_result_queue): xóa kết quả cũ (callback trễ của lần trước).
-  //   2. esp_now_send(node_b_mac, (const uint8_t *)pkt, sizeof(PktData)).
-  //      Khác ESP_OK -> in lỗi (esp_err_to_name), return false.
-  //   3. Chờ kết quả: xQueueReceive(send_result_queue, &ok, 100). Hết giờ -> false.
-  return false;
+  xQueueReset(send_result_queue);
+  esp_err_t status = esp_now_send(node_b_mac, (const uint8_t *)pkt, sizeof(PktData));
+  if(status != ESP_OK) {
+    Serial.printf("[A] esp_now_send loi: %s\n", esp_err_to_name(status));
+    return false;
+  }
+  bool ok = false; // khởi tạo bằng false cho an toàn dù ở trên đã return rồi
+  if(!xQueueReceive(send_result_queue, &ok, 100)) return false;
+  return ok;
 }
 
 void espnow_link_unpair() {
-  // TODO 9: esp_now_del_peer(node_b_mac) (chỉ khi peer đang tồn tại).
+  if (esp_now_is_peer_exist(node_b_mac)) esp_now_del_peer(node_b_mac);
 }
 
 int espnow_link_channel() { return cur_channel; }
