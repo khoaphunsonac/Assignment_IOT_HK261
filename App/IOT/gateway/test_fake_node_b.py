@@ -66,9 +66,10 @@ class TestFakeNodeB(unittest.TestCase):
         self.assertIn("fan_level", resp["state"])
 
     def test_case_4_bad_json(self):
-        """Case 4: abc (khong phai JSON) -> error: bad_json, id: null"""
+        """Case 4: abc (khong phai JSON) -> error: bad_json, id: null, ok: false"""
         resp = handle_cmd("not a dict")
         self.assertIsNone(resp["id"])
+        self.assertFalse(resp["ok"])
         self.assertEqual(resp["error"], "bad_json")
         self.assertIn("state", resp)
 

@@ -148,11 +148,12 @@ def handle_cmd(cmd_raw: Any) -> Dict[str, Any]:
     """
     Xử lý lệnh từ room1/cmd đúng CONTRACT mục 6.2, 6.3 và mục 13.
     """
-    global manual_start_time
+    global manual_start_time, presence_state, presence_toggle_counter
 
     if not isinstance(cmd_raw, dict):
         return {
             "id": None,
+            "ok": False,
             "error": "bad_json",
             "state": get_state(),
         }
@@ -187,6 +188,9 @@ def handle_cmd(cmd_raw: Any) -> Dict[str, Any]:
             state["fan_level"] = params
             state["mode"] = "manual"
             manual_start_time = time.time()
+            # Chỉ có ở script giả cho dễ test. Node B thật lấy presence từ PIR, KHÔNG đặt theo lệnh.
+            presence_state = True
+            presence_toggle_counter = 0
             logger.info("Executed setFan -> fan_level: %s, mode: manual", params)
             return {
                 "id": cmd_id,
@@ -208,6 +212,9 @@ def handle_cmd(cmd_raw: Any) -> Dict[str, Any]:
             state["light_on"] = params
             state["mode"] = "manual"
             manual_start_time = time.time()
+            # Chỉ có ở script giả cho dễ test. Node B thật lấy presence từ PIR, KHÔNG đặt theo lệnh.
+            presence_state = True
+            presence_toggle_counter = 0
             logger.info("Executed setLight -> light_on: %s, mode: manual", params)
             return {
                 "id": cmd_id,
@@ -231,6 +238,9 @@ def handle_cmd(cmd_raw: Any) -> Dict[str, Any]:
                 manual_start_time = time.time()
             else:
                 manual_start_time = None
+            # Chỉ có ở script giả cho dễ test. Node B thật lấy presence từ PIR, KHÔNG đặt theo lệnh.
+            presence_state = True
+            presence_toggle_counter = 0
             logger.info("Executed setMode -> mode: %s", params)
             return {
                 "id": cmd_id,
@@ -373,6 +383,7 @@ def on_message(client: mqtt.Client, userdata, msg):
         except Exception:
             resp = {
                 "id": None,
+                "ok": False,
                 "error": "bad_json",
                 "state": get_state(),
             }
