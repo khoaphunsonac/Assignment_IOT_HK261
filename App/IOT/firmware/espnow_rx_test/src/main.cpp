@@ -21,7 +21,7 @@ typedef struct {
 QueueHandle_t rx_queue;
 volatile uint32_t bad_pkt = 0, queue_full = 0;
 
-uint32_t rx = 0, lost = 0, dup = 0, pairs = 0, a_resets = 0;
+uint32_t rx = 0, lost = 0, dup_cnt = 0, pairs = 0, a_resets = 0;
 int64_t expected_seq = -1;
 uint32_t last_data_ms = 0;
 bool node_a_online = false;
@@ -84,12 +84,12 @@ void handle_data(const RxItem &it) {
   int64_t s = d.seq;
 
   if (expected_seq >= 0 && s == expected_seq - 1) {
-    dup++;  // gói gửi lại (Node A mất ACK nhưng B đã nhận)
+    dup_cnt++;  // gói gửi lại (Node A mất ACK nhưng B đã nhận)
     return;
   }
   if (expected_seq >= 0 && s < expected_seq - 1) {
     Serial.printf("[B] seq %lld < truoc -> Node A vua khoi dong lai, dem lai\n", (long long)s);
-    rx = lost = dup = 0;
+    rx = lost = dup_cnt = 0;
     a_resets++;
   } else if (expected_seq >= 0 && s > expected_seq) {
     lost += (uint32_t)(s - expected_seq);
@@ -147,7 +147,7 @@ void task_status(void *pvParameters) {
       Serial.printf("[B] === WiFi %s ch=%d | nhan=%lu mat=%lu trung=%lu loss=%.2f%% | ghep_cap=%lu "
                     "A_reset=%lu bad=%lu qfull=%lu | node_a_online=%d\n",
                     WiFi.status() == WL_CONNECTED ? "OK" : "MAT", WiFi.channel(), (unsigned long)rx,
-                    (unsigned long)lost, (unsigned long)dup, total ? 100.0f * lost / total : 0.0f,
+                    (unsigned long)lost, (unsigned long)dup_cnt, total ? 100.0f * lost / total : 0.0f,
                     (unsigned long)pairs, (unsigned long)a_resets, (unsigned long)bad_pkt,
                     (unsigned long)queue_full, node_a_online);
     }
