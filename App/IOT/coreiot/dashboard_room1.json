@@ -2462,6 +2462,203 @@
         "row": 11,
         "col": 6,
         "id": "cdef3c58-bcbe-454e-a2e1-9dcf93bf538a"
+      },
+      "35fc0aec-47f3-4ca4-aa93-2385d12f9741": {
+        "id": "35fc0aec-47f3-4ca4-aa93-2385d12f9741",
+        "typeFullFqn": "system.input_widgets.update_multiple_attributes",
+        "type": "latest",
+        "sizeX": 24,
+        "sizeY": 5,
+        "row": 0,
+        "col": 0,
+        "config": {
+          "datasources": [
+            {
+              "type": "entity",
+              "name": "",
+              "entityAliasId": "d7f425ee-e53f-49c2-831b-f65db12898c3",
+              "filterId": null,
+              "dataKeys": [
+                {
+                  "name": "fan_on_1",
+                  "type": "attribute",
+                  "label": "Bật quạt mức 1 (°C ≥)",
+                  "color": "#2196f3",
+                  "_hash": 0.11,
+                  "settings": {
+                    "dataKeyHidden": false,
+                    "dataKeyType": "shared",
+                    "dataKeyValueType": "double",
+                    "required": true,
+                    "isEditable": "editable",
+                    "step": 0.5,
+                    "minValue": -10,
+                    "maxValue": 60,
+                    "requiredErrorMessage": "Bắt buộc"
+                  }
+                },
+                {
+                  "name": "fan_off_1",
+                  "type": "attribute",
+                  "label": "Tắt quạt (°C ≤)",
+                  "color": "#2196f3",
+                  "_hash": 0.12,
+                  "settings": {
+                    "dataKeyHidden": false,
+                    "dataKeyType": "shared",
+                    "dataKeyValueType": "double",
+                    "required": true,
+                    "isEditable": "editable",
+                    "step": 0.5,
+                    "minValue": -10,
+                    "maxValue": 60,
+                    "requiredErrorMessage": "Bắt buộc"
+                  }
+                },
+                {
+                  "name": "fan_on_2",
+                  "type": "attribute",
+                  "label": "Lên quạt mức 2 (°C ≥)",
+                  "color": "#2196f3",
+                  "_hash": 0.13,
+                  "settings": {
+                    "dataKeyHidden": false,
+                    "dataKeyType": "shared",
+                    "dataKeyValueType": "double",
+                    "required": true,
+                    "isEditable": "editable",
+                    "step": 0.5,
+                    "minValue": -10,
+                    "maxValue": 60,
+                    "requiredErrorMessage": "Bắt buộc"
+                  }
+                },
+                {
+                  "name": "fan_off_2",
+                  "type": "attribute",
+                  "label": "Về quạt mức 1 (°C ≤)",
+                  "color": "#2196f3",
+                  "_hash": 0.14,
+                  "settings": {
+                    "dataKeyHidden": false,
+                    "dataKeyType": "shared",
+                    "dataKeyValueType": "double",
+                    "required": true,
+                    "isEditable": "editable",
+                    "step": 0.5,
+                    "minValue": -10,
+                    "maxValue": 60,
+                    "requiredErrorMessage": "Bắt buộc"
+                  }
+                },
+                {
+                  "name": "light_dark",
+                  "type": "attribute",
+                  "label": "Tối hơn thì bật đèn (ADC <)",
+                  "color": "#2196f3",
+                  "_hash": 0.15,
+                  "settings": {
+                    "dataKeyHidden": false,
+                    "dataKeyType": "shared",
+                    "dataKeyValueType": "integer",
+                    "required": true,
+                    "isEditable": "editable",
+                    "step": 50,
+                    "minValue": 0,
+                    "maxValue": 4095,
+                    "requiredErrorMessage": "Bắt buộc"
+                  }
+                },
+                {
+                  "name": "light_bright",
+                  "type": "attribute",
+                  "label": "Sáng hơn thì tắt đèn (ADC >)",
+                  "color": "#2196f3",
+                  "_hash": 0.16,
+                  "settings": {
+                    "dataKeyHidden": false,
+                    "dataKeyType": "shared",
+                    "dataKeyValueType": "integer",
+                    "required": true,
+                    "isEditable": "editable",
+                    "step": 50,
+                    "minValue": 0,
+                    "maxValue": 4095,
+                    "requiredErrorMessage": "Bắt buộc"
+                  }
+                },
+                {
+                  "name": "empty_timeout_s",
+                  "type": "attribute",
+                  "label": "Phòng trống sau (giây)",
+                  "color": "#2196f3",
+                  "_hash": 0.17,
+                  "settings": {
+                    "dataKeyHidden": false,
+                    "dataKeyType": "shared",
+                    "dataKeyValueType": "integer",
+                    "required": true,
+                    "isEditable": "editable",
+                    "step": 10,
+                    "minValue": 10,
+                    "maxValue": 86400,
+                    "requiredErrorMessage": "Bắt buộc"
+                  }
+                },
+                {
+                  "name": "manual_timeout_s",
+                  "type": "attribute",
+                  "label": "Lệnh tay giữ (giây)",
+                  "color": "#2196f3",
+                  "_hash": 0.18,
+                  "settings": {
+                    "dataKeyHidden": false,
+                    "dataKeyType": "shared",
+                    "dataKeyValueType": "integer",
+                    "required": true,
+                    "isEditable": "editable",
+                    "step": 10,
+                    "minValue": 10,
+                    "maxValue": 86400,
+                    "requiredErrorMessage": "Bắt buộc"
+                  }
+                }
+              ]
+            }
+          ],
+          "timewindow": {
+            "realtime": {
+              "timewindowMs": 60000
+            }
+          },
+          "showTitle": true,
+          "title": "Ngưỡng tự động",
+          "backgroundColor": "#fff",
+          "color": "rgba(0, 0, 0, 0.87)",
+          "padding": "8px",
+          "settings": {
+            "widgetTitle": "",
+            "showActionButtons": true,
+            "updateAllValues": true,
+            "saveButtonLabel": "Lưu ngưỡng",
+            "resetButtonLabel": "Hoàn tác",
+            "showResultMessage": true,
+            "showGroupTitle": false,
+            "fieldsAlignment": "row",
+            "fieldsInRow": 4
+          },
+          "dropShadow": true,
+          "enableFullscreen": false,
+          "enableDataExport": false,
+          "widgetStyle": {},
+          "titleStyle": {
+            "fontSize": "16px",
+            "fontWeight": 400
+          },
+          "useDashboardTimewindow": true,
+          "showLegend": false,
+          "actions": {}
+        }
       }
     },
     "states": {
@@ -2554,6 +2751,12 @@
                 "sizeY": 2,
                 "row": 11,
                 "col": 6
+              },
+              "35fc0aec-47f3-4ca4-aa93-2385d12f9741": {
+                "sizeX": 24,
+                "sizeY": 5,
+                "row": 13,
+                "col": 0
               }
             },
             "gridSettings": {

@@ -64,4 +64,4 @@ python fake_telemetry.py
 
 **Import dashboard:** Dashboards → **+** → *Import dashboard* → chọn `coreiot/dashboard_room1.json` → gán alias `sensor_node` và `actuator_node` vào device (`room1-test`, hoặc `room1-node-a` / `room1-node-b` khi đã có Gateway).
 
-**RuleChain:** chưa có (T12 `autoFan`/`autoLight`, T13 cảnh báo). Khi làm xong sẽ export vào `coreiot/` và import bằng Rule chains → **+** → *Import rule chain*.
+**RuleChain:** cảnh báo T13 ở `coreiot/rulechain_room1_alarms.json`. Import bằng Rule chains → **+** → *Import rule chain*, rồi thêm node *Rule Chain* trỏ tới nó trong Root Rule Chain (xem SETUP_COREIOT mục 5). T12 `autoFan`/`autoLight` chưa làm.
