@@ -155,7 +155,7 @@ Nhánh `26-node-a-sensor-espnow`. File:
 Thứ tự:
 1. `task_sensor` 2 giây/lần, in Serial. Kiểm: hà hơi vào DHT20 thì độ ẩm tăng, che cảm biến thì `light` đổi.
 2. `espnow_packet.h`.
-3. `task_espnow_tx`: ghép cặp, unicast (hoặc broadcast, tùy kết quả test 11/11), gửi lại cùng `seq` tối đa 3 lần.
+3. `task_espnow_tx`: ghép cặp, unicast (đã chốt sau test 11/11), gửi lại cùng `seq` tối đa 3 lần.
 4. Chưa có số đo hợp lệ thì không gửi.
 
 **Xong khi:** PR có log Node B nhận `seq` liên tục, và log tự ghép lại sau khi reset Node B.

@@ -61,7 +61,7 @@ Node A ──ESP-NOW──> Node B ──MQTT (Mosquitto trên laptop)──> Ga
 |---|---|---|
 | `temperature` | °C | -10 … 60 (ngoài khoảng = lỗi cảm biến, Node A không gửi) |
 | `humidity` | % | 0 … 100 |
-| `light` | giá trị ADC thô 12 bit | 0 … 4095 (chiều sáng/tối: TV1 kiểm trên board rồi ghi vào đây) |
+| `light` | giá trị ADC thô 12 bit | 0 … 4095 (càng sáng số càng lớn; lab 13/11: che kín ~25–100, phòng bật đèn ~800–1100, rọi đèn ~3000) |
 | `anomaly_score` | không đơn vị | 0.0 … 1.0 |
 | `rssi` | dBm | -100 … 0 |
 
@@ -122,7 +122,7 @@ typedef struct __attribute__((packed)) {
 - Chu kỳ 2 giây một mẫu.
 - **Chưa có số đo hợp lệ thì không gửi.** DHT20 lỗi hoặc ngoài khoảng ở mục 2 thì bỏ mẫu đó, tăng `dht_fail`.
 - Ghép cặp: broadcast `PKT_PAIR_REQ`, nhận `PKT_PAIR_RESP` thì học MAC Node B. **Không hardcode MAC** (board mượn mỗi buổi khác nhau).
-- Gửi `PKT_DATA` bằng unicast tới Node B (chờ kết quả test 11/11 xác nhận). Gửi thất bại thì gửi lại **cùng `seq`**, tối đa 3 lần.
+- Gửi `PKT_DATA` bằng unicast tới Node B. Gửi thất bại thì gửi lại **cùng `seq`**, tối đa 3 lần.
 - Lỗi liên tiếp khoảng 10 giây: coi như mất Node B, quét lại channel hotspot và ghép cặp lại.
 - `PKT_CONFIG`: W1 Node A dùng hằng số `empty_timeout_s = 60` (demo). Nhận `PKT_CONFIG` làm từ W2.
 
@@ -302,7 +302,7 @@ Gateway publish **retained** bộ ngưỡng **đầy đủ** (không gửi từn
 **Ràng buộc** (Gateway kiểm trước khi gửi, Node B kiểm lại, sai thì giữ bộ cũ):
 `fan_off_1 < fan_on_1 <= fan_off_2 < fan_on_2`, và `light_dark < light_bright`.
 
-`light_dark`/`light_bright` ở trên giả sử ADC càng lớn càng sáng. TV1 kiểm chiều trên board rồi sửa mục này nếu ngược.
+Đã kiểm trên board 13/11: ADC càng lớn càng sáng. Phòng bật đèn đo ~800–1100 < `light_dark`, nên có người là bật đèn; chỉ rất sáng (> `light_bright`) mới tắt. Cố ý vì phòng học thường luôn bật đèn.
 
 Node A không nối WiFi nên `empty_timeout_s` đi tiếp xuống Node A bằng `PKT_CONFIG` (làm từ W2).
 

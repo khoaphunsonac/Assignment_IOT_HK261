@@ -7,6 +7,7 @@ Quy ước dữ liệu giữa các phần: [docs/CONTRACT.md](../../docs/CONTRAC
 |---|---|---|
 | `firmware/common/` | `espnow_packet.h` dùng chung 2 node | TV1 |
 | `firmware/node_a/` | Node A: DHT20, PIR, ánh sáng, TinyML, gửi ESP-NOW | TV1 |
+| `firmware/espnow_rx_test/` | Node B giả chỉ nhận ESP-NOW, để test Node A (không phải firmware Node B thật) | TV1 |
 | `firmware/node_b/` | Node B: quạt, LED RGB, LCD, MQTT, webserver, OTA | TV1 (webserver: TV4) |
 | `gateway/` | Python: bridge CoreIOT, OTA server, AI, giao diện local, `fake_node_b.py` | TV2, TV3 |
 | `ai/` | Dữ liệu, script train, model TinyML đã xuất | TV3 |
