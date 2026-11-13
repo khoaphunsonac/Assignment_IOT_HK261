@@ -43,4 +43,25 @@ Cảm biến analog chỉ dùng ADC1 (GPIO 1–10), vì ADC2 không đọc đư�
 
 ## CoreIOT
 
-[TV4 điền: tên thiết bị, cách import dashboard và RuleChain từ `coreiot/`.]
+Chi tiết đầy đủ: [`coreiot/SETUP_COREIOT.md`](coreiot/SETUP_COREIOT.md). Nền tảng là app.coreiot.io (ThingsBoard PE 4.2.0).
+
+**Thiết bị** (tên theo CONTRACT mục 11):
+
+| Tên | Ai tạo | Dữ liệu |
+|---|---|---|
+| `room1-gateway` | tạo ở Entities → Gateways (Tuấn, #28) | Sự kiện AI (`event_type`, `event_level`, `event_msg`) |
+| `room1-node-a` | Gateway tự tạo | Số đo cảm biến, `anomaly_score` |
+| `room1-node-b` | Gateway tự tạo | `fan_level`, `light_on`, `mode`, nhận RPC, giữ shared attribute ngưỡng, nhận OTA |
+| `room1-test` | tạo tay, tạm thời | Dữ liệu giả từ `fake_telemetry.py`, khi chưa có Gateway |
+
+**Chạy dữ liệu giả** (chưa có Gateway):
+```powershell
+cd App\IOT\coreiot
+pip install paho-mqtt==1.6.1
+copy .env.example .env      # dán Access Token của room1-test vào COREIOT_TEST_TOKEN
+python fake_telemetry.py
+```
+
+**Import dashboard:** Dashboards → **+** → *Import dashboard* → chọn `coreiot/dashboard_room1.json` → gán alias `sensor_node` và `actuator_node` vào device (`room1-test`, hoặc `room1-node-a` / `room1-node-b` khi đã có Gateway).
+
+**RuleChain:** chưa có (T12 `autoFan`/`autoLight`, T13 cảnh báo). Khi làm xong sẽ export vào `coreiot/` và import bằng Rule chains → **+** → *Import rule chain*.
