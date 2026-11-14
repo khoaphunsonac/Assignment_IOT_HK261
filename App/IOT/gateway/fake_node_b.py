@@ -176,6 +176,11 @@ def handle_cmd(cmd_raw: Any) -> Dict[str, Any]:
     with state_lock:
         # 1. setFan (Lệnh tay từ người bấm)
         if method == "setFan":
+            if isinstance(params, str):
+                try:
+                    params = int(params)
+                except (ValueError, TypeError):
+                    pass
             # params phải là int 0, 1, 2 (loại trừ bool vì isinstance(True, int) là True)
             if isinstance(params, bool) or not isinstance(params, int) or params not in (0, 1, 2):
                 return {
@@ -201,6 +206,11 @@ def handle_cmd(cmd_raw: Any) -> Dict[str, Any]:
 
         # 2. setLight (Lệnh tay từ người bấm)
         if method == "setLight":
+            if isinstance(params, str):
+                if params.lower() in ("true", "1"):
+                    params = True
+                elif params.lower() in ("false", "0"):
+                    params = False
             if not isinstance(params, bool):
                 return {
                     "id": cmd_id,
@@ -225,6 +235,8 @@ def handle_cmd(cmd_raw: Any) -> Dict[str, Any]:
 
         # 3. setMode (Người bấm đổi mode: "auto" / "manual")
         if method == "setMode":
+            if isinstance(params, str):
+                params = params.strip('"\'')
             if params not in ("auto", "manual"):
                 return {
                     "id": cmd_id,
@@ -260,6 +272,11 @@ def handle_cmd(cmd_raw: Any) -> Dict[str, Any]:
                     "error": "ignored_not_auto",
                     "state": get_state(),
                 }
+            if isinstance(params, str):
+                try:
+                    params = int(params)
+                except (ValueError, TypeError):
+                    pass
             if isinstance(params, bool) or not isinstance(params, int) or params not in (0, 1, 2):
                 return {
                     "id": cmd_id,
@@ -287,6 +304,11 @@ def handle_cmd(cmd_raw: Any) -> Dict[str, Any]:
                     "error": "ignored_not_auto",
                     "state": get_state(),
                 }
+            if isinstance(params, str):
+                if params.lower() in ("true", "1"):
+                    params = True
+                elif params.lower() in ("false", "0"):
+                    params = False
             if not isinstance(params, bool):
                 return {
                     "id": cmd_id,

@@ -314,6 +314,7 @@ class GatewayBridge:
 
         # 1. Xử lý RPC từ CoreIOT gửi xuống thiết bị con
         if topic == "v1/gateway/rpc":
+            logger.info("Nhận tin từ CoreIOT [v1/gateway/rpc]: %s", payload_str)
             self._handle_cloud_rpc(data)
 
         # 2. Xử lý cập nhật Shared Attributes (ngưỡng)
@@ -334,8 +335,20 @@ class GatewayBridge:
         params = rpc_data.get("params")
 
         if coreiot_id is None or method is None:
-            logger.warning("CoreIOT RPC thiếu id hoặc method: %s", data)
+            # Có thể là echo response từ chính gateway
             return
+
+        # Chuẩn hóa params nếu nhận dạng chuỗi từ widget trên dashboard
+        if method in ("setFan", "autoFan") and isinstance(params, str):
+            try:
+                params = int(params)
+            except (ValueError, TypeError):
+                pass
+        elif method in ("setLight", "autoLight") and isinstance(params, str):
+            if params.lower() in ("true", "1"):
+                params = True
+            elif params.lower() in ("false", "0"):
+                params = False
 
         local_cmd_id = f"tb-{coreiot_id}"
 
