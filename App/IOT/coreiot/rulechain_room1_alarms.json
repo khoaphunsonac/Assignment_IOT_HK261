@@ -1,0 +1,354 @@
+{
+  "ruleChain": {
+    "name": "Room1 Alarms",
+    "type": "CORE",
+    "firstRuleNodeId": null,
+    "root": false,
+    "debugMode": false,
+    "configuration": null,
+    "additionalInfo": {
+      "description": "T13 canh bao Room 1 (CONTRACT 11.7). Root Rule Chain chuyen Post telemetry + Activity/Inactivity vao day."
+    }
+  },
+  "metadata": {
+    "firstNodeIndex": 0,
+    "nodes": [
+      {
+        "type": "org.thingsboard.rule.engine.filter.TbJsSwitchNode",
+        "name": "Phan loai canh bao",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return [];",
+          "tbelScript": "// CONTRACT 11.7. Chi xu ly thiet bi room1-*\nvar r = [];\nvar name = metadata.deviceName;\nif (name == null || !name.startsWith('room1')) { return r; }\nif (msgType == 'INACTIVITY_EVENT') { r.add('offline'); return r; }\nif (msgType == 'ACTIVITY_EVENT') { r.add('online'); return r; }\nif (msg.temperature != null) {\n  if (msg.temperature >= 35) { r.add('tempHigh'); } else { r.add('tempOk'); }\n}\nif (msg.anomaly != null) {\n  if (msg.anomaly == true) { r.add('anomaly'); } else { r.add('anomalyOk'); }\n}\nif (msg.event_level == 'warning') { r.add('aiWarning'); }\nif (msg.presence != null) {\n  if (msg.presence == false && msg.fan_level == 0 && msg.light_on == false) { r.add('roomEmpty'); }\n  else if (msg.presence == true) { r.add('roomOccupied'); }\n}\nif (msg.fw_state == 'UPDATED') { r.add('otaSuccess'); }\nif (msg.fw_state == 'FAILED') { r.add('otaFailed'); }\nreturn r;"
+        },
+        "additionalInfo": {
+          "layoutX": 300,
+          "layoutY": 400
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbCreateAlarmNode",
+        "name": "Nhiet do cao",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\ndetails.temperature = msg.temperature;\ndetails.message = \"Nhiet do \" + msg.temperature + \" C >= 35 C\";\nreturn details;",
+          "useMessageAlarmData": false,
+          "overwriteAlarmDetails": true,
+          "dynamicSeverity": false,
+          "alarmType": "High Temperature",
+          "severity": "CRITICAL",
+          "propagate": false,
+          "relationTypes": [],
+          "propagateToOwner": false,
+          "propagateToOwnerHierarchy": false,
+          "propagateToTenant": false
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 50
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbClearAlarmNode",
+        "name": "Het nhiet do cao",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\nreturn details;",
+          "alarmType": "High Temperature"
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 130
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbCreateAlarmNode",
+        "name": "Bat thuong",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\ndetails.anomaly_score = msg.anomaly_score;\ndetails.message = \"AI phat hien bat thuong, score \" + msg.anomaly_score;\nreturn details;",
+          "useMessageAlarmData": false,
+          "overwriteAlarmDetails": true,
+          "dynamicSeverity": false,
+          "alarmType": "Anomaly",
+          "severity": "WARNING",
+          "propagate": false,
+          "relationTypes": [],
+          "propagateToOwner": false,
+          "propagateToOwnerHierarchy": false,
+          "propagateToTenant": false
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 210
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbClearAlarmNode",
+        "name": "Het bat thuong",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\nreturn details;",
+          "alarmType": "Anomaly"
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 290
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbCreateAlarmNode",
+        "name": "Su kien AI",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\ndetails.event_type = msg.event_type;\ndetails.message = msg.event_msg;\nreturn details;",
+          "useMessageAlarmData": false,
+          "overwriteAlarmDetails": true,
+          "dynamicSeverity": false,
+          "alarmType": "AI Event",
+          "severity": "WARNING",
+          "propagate": false,
+          "relationTypes": [],
+          "propagateToOwner": false,
+          "propagateToOwnerHierarchy": false,
+          "propagateToTenant": false
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 370
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbCreateAlarmNode",
+        "name": "Mat ket noi",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\ndetails.message = metadata.deviceName + \" offline qua 1 phut\";\nreturn details;",
+          "useMessageAlarmData": false,
+          "overwriteAlarmDetails": true,
+          "dynamicSeverity": false,
+          "alarmType": "Device Offline",
+          "severity": "WARNING",
+          "propagate": false,
+          "relationTypes": [],
+          "propagateToOwner": false,
+          "propagateToOwnerHierarchy": false,
+          "propagateToTenant": false
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 450
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbClearAlarmNode",
+        "name": "Co ket noi lai",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\nreturn details;",
+          "alarmType": "Device Offline"
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 530
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbCreateAlarmNode",
+        "name": "Phong trong, da tat het",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\ndetails.message = \"Phong trong, quat va den da tat\";\nreturn details;",
+          "useMessageAlarmData": false,
+          "overwriteAlarmDetails": true,
+          "dynamicSeverity": false,
+          "alarmType": "Room Empty",
+          "severity": "INDETERMINATE",
+          "propagate": false,
+          "relationTypes": [],
+          "propagateToOwner": false,
+          "propagateToOwnerHierarchy": false,
+          "propagateToTenant": false
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 610
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbClearAlarmNode",
+        "name": "Co nguoi lai",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\nreturn details;",
+          "alarmType": "Room Empty"
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 690
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbCreateAlarmNode",
+        "name": "OTA thanh cong",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\ndetails.fw_version = msg.fw_version;\ndetails.message = \"OTA thanh cong\";\nreturn details;",
+          "useMessageAlarmData": false,
+          "overwriteAlarmDetails": true,
+          "dynamicSeverity": false,
+          "alarmType": "OTA Success",
+          "severity": "INDETERMINATE",
+          "propagate": false,
+          "relationTypes": [],
+          "propagateToOwner": false,
+          "propagateToOwnerHierarchy": false,
+          "propagateToTenant": false
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 770
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbCreateAlarmNode",
+        "name": "OTA that bai",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "alarmDetailsBuildJs": "return {};",
+          "alarmDetailsBuildTbel": "var details = {};\nif (metadata.prevAlarmDetails != null) { details = JSON.parse(metadata.prevAlarmDetails); }\ndetails.message = \"OTA that bai\";\nreturn details;",
+          "useMessageAlarmData": false,
+          "overwriteAlarmDetails": true,
+          "dynamicSeverity": false,
+          "alarmType": "OTA Failed",
+          "severity": "INDETERMINATE",
+          "propagate": false,
+          "relationTypes": [],
+          "propagateToOwner": false,
+          "propagateToOwnerHierarchy": false,
+          "propagateToTenant": false
+        },
+        "additionalInfo": {
+          "layoutX": 800,
+          "layoutY": 850
+        }
+      }
+    ],
+    "connections": [
+      {
+        "fromIndex": 0,
+        "toIndex": 1,
+        "type": "tempHigh"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 2,
+        "type": "tempOk"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 3,
+        "type": "anomaly"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 4,
+        "type": "anomalyOk"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 5,
+        "type": "aiWarning"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 6,
+        "type": "offline"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 7,
+        "type": "online"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 8,
+        "type": "roomEmpty"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 9,
+        "type": "roomOccupied"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 10,
+        "type": "otaSuccess"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 11,
+        "type": "otaFailed"
+      }
+    ],
+    "ruleChainConnections": null
+  }
+}
