@@ -180,6 +180,46 @@ class TestGatewayBridge(unittest.TestCase):
         with rpc_lock:
             self.assertNotIn("tb-17", pending_rpc)
 
+    def test_rpc_string_params_normalization(self):
+        """Kiểm tra Gateway Bridge tự động chuẩn hóa chuỗi params (int, bool, strip nháy mode)."""
+        bridge = GatewayBridge()
+        published_local = []
+        bridge.local_client.publish = lambda topic, payload, qos=0, retain=False: published_local.append((topic, json.loads(payload)))
+
+        # 1. setFan với chuỗi "2" -> int 2
+        bridge._handle_cloud_rpc({"device": DEVICE_NODE_B, "data": {"id": 1, "method": "setFan", "params": "2"}})
+        self.assertEqual(published_local[-1][1]["params"], 2)
+
+        # 2. setLight với chuỗi "true" -> bool True
+        bridge._handle_cloud_rpc({"device": DEVICE_NODE_B, "data": {"id": 2, "method": "setLight", "params": "true"}})
+        self.assertEqual(published_local[-1][1]["params"], True)
+
+        # 3. setMode với chuỗi có dấu nháy '"manual"' -> chuỗi "manual"
+        bridge._handle_cloud_rpc({"device": DEVICE_NODE_B, "data": {"id": 3, "method": "setMode", "params": '"manual"'}})
+        self.assertEqual(published_local[-1][1]["params"], "manual")
+
+    def test_handle_cloud_attributes_values_format(self):
+        """Kiểm tra xử lý phản hồi attributes dạng values từ CoreIOT (CONTRACT mục 11.5)."""
+        bridge = GatewayBridge()
+        published_local = []
+        bridge.local_client.publish = lambda topic, payload, qos=0, retain=False: published_local.append((topic, json.loads(payload)))
+
+        resp_msg = {
+            "id": 1,
+            "device": DEVICE_NODE_B,
+            "values": {
+                "fan_on_1": 30.5,
+                "fan_off_1": 28.0,
+            }
+        }
+        bridge._handle_cloud_attributes(resp_msg)
+
+        self.assertEqual(len(published_local), 1)
+        topic, payload = published_local[0]
+        self.assertEqual(topic, "room1/config")
+        self.assertEqual(payload["fan_on_1"], 30.5)
+        self.assertEqual(payload["fan_off_1"], 28.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -149,6 +149,7 @@ class GatewayBridge:
         if COREIOT_TOKEN:
             client.username_pw_set(COREIOT_TOKEN, password=None)
         client.on_connect = self._on_cloud_connect
+        client.on_disconnect = self._on_cloud_disconnect
         client.on_message = self._on_cloud_message
         return client
 
@@ -295,12 +296,24 @@ class GatewayBridge:
             client.subscribe("v1/gateway/attributes", qos=1)
             client.subscribe("v1/gateway/attributes/response", qos=1)
 
-            # 4. Yêu cầu lấy toàn bộ shared attributes hiện tại của room1-node-b
-            attr_req = {"device": DEVICE_NODE_B, "id": 1, "client": False}
+            # 4. Yêu cầu lấy toàn bộ shared attributes hiện tại của room1-node-b (CONTRACT mục 11.5)
+            attr_req = {
+                "device": DEVICE_NODE_B,
+                "id": 1,
+                "client": False,
+                "keys": list(config_cache.keys()),
+            }
             client.publish("v1/gateway/attributes/request", json.dumps(attr_req), qos=1)
+            logger.info("CoreIOT: Đã gửi request lấy Shared Attributes cho %s (keys: %s)", DEVICE_NODE_B, list(config_cache.keys()))
             logger.info("CoreIOT: Đã subscribe v1/gateway/rpc và v1/gateway/attributes")
         else:
             logger.error("CoreIOT: Kết nối thất bại với mã rc=%s (Kiểm tra lại COREIOT_TOKEN trong .env)", rc)
+
+    def _on_cloud_disconnect(self, client: mqtt.Client, userdata, rc):
+        if rc == 0:
+            logger.info("CoreIOT: Đã ngắt kết nối chủ động (rc=0)")
+        else:
+            logger.warning("CoreIOT: Bị ngắt kết nối bất thường (rc=%s). Paho sẽ tự động kết nối lại...", rc)
 
     def _on_cloud_message(self, client: mqtt.Client, userdata, msg):
         topic = msg.topic
@@ -319,6 +332,7 @@ class GatewayBridge:
 
         # 2. Xử lý cập nhật Shared Attributes (ngưỡng)
         elif topic in ("v1/gateway/attributes", "v1/gateway/attributes/response"):
+            logger.info("Nhận tin từ CoreIOT [%s]: %s", topic, payload_str)
             self._handle_cloud_attributes(data)
 
     def _handle_cloud_rpc(self, data: Dict[str, Any]):
@@ -349,6 +363,8 @@ class GatewayBridge:
                 params = True
             elif params.lower() in ("false", "0"):
                 params = False
+        elif method == "setMode" and isinstance(params, str):
+            params = params.strip('"\'')
 
         local_cmd_id = f"tb-{coreiot_id}"
 
