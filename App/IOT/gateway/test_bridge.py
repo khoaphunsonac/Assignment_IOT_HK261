@@ -220,6 +220,54 @@ class TestGatewayBridge(unittest.TestCase):
         self.assertEqual(payload["fan_on_1"], 30.5)
         self.assertEqual(payload["fan_off_1"], 28.0)
 
+    def test_bridge_ota_status_forwarding(self):
+        """Kiểm tra bridge chuyển tiếp room1/ota/status sang telemetry CoreIOT (Issue #45)."""
+        bridge = GatewayBridge()
+        published_cloud = []
+        bridge.cloud_client.publish = lambda topic, payload, qos=0, retain=False: published_cloud.append((topic, json.loads(payload)))
+
+        # Giả lập Node B gửi downloading 50%
+        status_msg = {"version": "1.0.1", "state": "downloading", "progress": 50, "ts": 1762761800000}
+        bridge._handle_local_ota_status(status_msg)
+
+        self.assertEqual(len(published_cloud), 1)
+        topic, payload = published_cloud[0]
+        self.assertEqual(topic, "v1/gateway/telemetry")
+        self.assertIn(DEVICE_NODE_B, payload)
+        self.assertEqual(payload[DEVICE_NODE_B][0]["values"]["fw_state"], "DOWNLOADING")
+
+    def test_bridge_cloud_ota_trigger(self):
+        """Kiểm tra CoreIOT gán firmware -> bridge tự động phát hành room1/ota (Issue #29 & #45)."""
+        bridge = GatewayBridge()
+        published_local = []
+        bridge.local_client.publish = lambda topic, payload, qos=0, retain=False: published_local.append((topic, json.loads(payload)))
+
+        from pathlib import Path
+        fw_dir = Path(__file__).parent / "fw"
+        fw_dir.mkdir(parents=True, exist_ok=True)
+        test_bin = fw_dir / "node_b_1.0.1.bin"
+        test_bin.write_bytes(b"mock firmware binary")
+
+        try:
+            cloud_attr_event = {
+                "device": DEVICE_NODE_B,
+                "data": {
+                    "fw_title": "node-b-fw",
+                    "fw_version": "1.0.1",
+                    "fw_size": 20,
+                }
+            }
+            bridge._handle_cloud_attributes(cloud_attr_event)
+
+            ota_msgs = [p for t, p in published_local if t == "room1/ota"]
+            self.assertEqual(len(ota_msgs), 1)
+            self.assertEqual(ota_msgs[0]["version"], "1.0.1")
+            self.assertIn("node_b_1.0.1.bin", ota_msgs[0]["url"])
+            self.assertIn("sha256", ota_msgs[0])
+        finally:
+            if test_bin.exists():
+                test_bin.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()

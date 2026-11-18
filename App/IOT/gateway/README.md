@@ -105,7 +105,7 @@ Script sẽ kết nối tới `localhost:1883` và:
 ```powershell
 python App/IOT/gateway/test_bridge.py
 ```
-Kết quả mong đợi: `Ran 6 tests ... OK` (kiểm tra tách telemetry 2 thiết bị, ánh xạ RPC 2 chiều, chuẩn hóa tham số chuỗi, timeout và kiểm tra ràng buộc cấu hình).
+Kết quả mong đợi: `Ran 8 tests ... OK` (kiểm tra tách telemetry 2 thiết bị, ánh xạ RPC 2 chiều, chuẩn hóa tham số chuỗi, timeout, kiểm tra ràng buộc cấu hình và chuyển tiếp/kích hoạt OTA).
 
 ### 3.3. Chạy `bridge.py` trong thực tế
 
@@ -120,3 +120,30 @@ Gateway Bridge sẽ:
 3. Nhận `room1/telemetry` từ Node B $\rightarrow$ tách thành số đo cho 2 thiết bị $\rightarrow$ publish lên `v1/gateway/telemetry`.
 4. Nhận RPC từ CoreIOT `v1/gateway/rpc` $\rightarrow$ chuyển thành `room1/cmd` (`id` = `tb-<id>`) $\rightarrow$ nhận kết quả từ `room1/cmd/resp` $\rightarrow$ phản hồi ngược lại CoreIOT.
 5. Đồng bộ cấu hình ngưỡng (Shared Attributes) từ CoreIOT xuống `room1/config`.
+6. Khởi động HTTP Server phục vụ phát file firmware từ thư mục `fw/`.
+7. Nhận `room1/ota/status` từ Node B $\rightarrow$ đổi trạng thái sang `fw_state` và chuyển tiếp lên `v1/gateway/telemetry`.
+8. Tự động kích hoạt OTA khi nhận thông báo gán firmware từ CoreIOT.
+
+---
+
+## 4. Phát hành Firmware từ xa (OTA - Issue #45)
+
+### 4.1. Chạy unit test cho module OTA
+
+```powershell
+python App/IOT/gateway/test_ota.py
+```
+Kết quả mong đợi: `Ran 4 tests ... OK` (kiểm tra tính sha256, ánh xạ 5 trạng thái OTA, tạo bản tin `room1/ota` và HTTP server phát file).
+
+### 4.2. Phát hành firmware bằng lệnh tay (`ota_publish.py`)
+
+Đặt file firmware `.bin` vào thư mục `App/IOT/gateway/fw/` (ví dụ `node_b_1.0.1.bin`), sau đó chạy:
+
+```powershell
+python App/IOT/gateway/ota_publish.py App/IOT/gateway/fw/node_b_1.0.1.bin 1.0.1
+```
+
+Script sẽ:
+- Tính sha256, dung lượng file.
+- Tạo link download `http://<GATEWAY_IP>:<OTA_PORT>/fw/node_b_1.0.1.bin`.
+- Publish bản tin đúng CONTRACT mục 9 lên topic `room1/ota`. Node B sẽ tải và tự động cập nhật!

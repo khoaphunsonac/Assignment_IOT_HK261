@@ -30,3 +30,4 @@ secrets.h
 __pycache__/
 .venv/
 venv/
+App/IOT/gateway/fw/*.bin

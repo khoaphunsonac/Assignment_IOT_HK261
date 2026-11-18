@@ -19,6 +19,11 @@ from typing import Any, Dict, Optional
 
 import paho.mqtt.client as mqtt
 
+# Đảm bảo kết nối nội bộ localhost không bị proxy can thiệp
+no_proxy_curr = os.environ.get("no_proxy", "")
+if "localhost" not in no_proxy_curr:
+    os.environ["no_proxy"] = (no_proxy_curr + ",localhost,127.0.0.1").strip(",")
+
 # Cấu hình logging
 logging.basicConfig(
     level=logging.INFO,
