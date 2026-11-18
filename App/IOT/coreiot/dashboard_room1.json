@@ -4,7 +4,7 @@
   "mobileHide": false,
   "mobileOrder": null,
   "configuration": {
-    "description": "Dashboard phòng 1 (issue #32). Alias sensor_node/actuator_node đang trỏ room1-test; khi có Gateway đổi sang room1-node-a/room1-node-b.",
+    "description": "Dashboard phòng 1 (issue #32, #46). Alias sensor_node tìm thiết bị tên room1-node-a, actuator_node tìm room1-node-b (sau Gateway room1-gateway).",
     "widgets": {
       "8e3d97f4-c2c5-41a7-b0c7-1316f936692a": {
         "typeFullFqn": "system.cards.value_card",

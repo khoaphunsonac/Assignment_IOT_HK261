@@ -111,6 +111,7 @@ Ghi chú:
 
   Vì đã đổi originator nên alarm `Room Empty` nằm trên `room1-node-b` (thiết bị đã tắt quạt/đèn). Bản tin gộp kiểu `room1-test` vẫn đi nhánh cũ.
   Lúc vừa trống, Node B cần ~1 bản tin (2 s) mới báo `fan_level = 0`, nên alarm có thể trễ 2–4 s.
+  `room1-node-b` phải có sẵn telemetry `fan_level`, `light_on` (chạy `bridge.py` + Node B ít nhất một lần). Thiếu thì node lấy trạng thái đi nhánh **Failure** sang node log `Bao thieu trang thai node-b`: Room Empty không tạo, không tự xóa được. Xem ở tab *Events* (debug Failure đã bật) của 2 node này.
 - **OTA**: đang giả sử Gateway đổi state sang `fw_state` chuẩn ThingsBoard (`UPDATED`, `FAILED`). Chờ #29 chốt cách đổi rồi sửa nếu khác.
 - Đã thử 13/11 trên `room1-test`: gửi 36.5 °C ra CRITICAL, về 30 °C tự xóa; dừng gửi 1 phút ra `Device Offline`.
 - Đã thử 18/11 với `fake_node_b.py` + `bridge.py`: High Temperature trên `room1-node-a`, Room Empty trên `room1-node-b` tạo và tự xóa; tắt `bridge.py` > 1 phút ra `Device Offline` cho cả 3 thiết bị.
