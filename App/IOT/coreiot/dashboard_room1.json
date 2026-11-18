@@ -2776,24 +2776,20 @@
         "id": "b4167588-f73f-4f55-ab16-26ce56269fa6",
         "alias": "sensor_node",
         "filter": {
-          "type": "singleEntity",
+          "type": "entityName",
           "resolveMultiple": false,
-          "singleEntity": {
-            "entityType": "DEVICE",
-            "id": "a13b9e20-dd7f-11f1-9298-f795494fee72"
-          }
+          "entityType": "DEVICE",
+          "entityNameFilter": "room1-node-a"
         }
       },
       "d7f425ee-e53f-49c2-831b-f65db12898c3": {
         "id": "d7f425ee-e53f-49c2-831b-f65db12898c3",
         "alias": "actuator_node",
         "filter": {
-          "type": "singleEntity",
+          "type": "entityName",
           "resolveMultiple": false,
-          "singleEntity": {
-            "entityType": "DEVICE",
-            "id": "a13b9e20-dd7f-11f1-9298-f795494fee72"
-          }
+          "entityType": "DEVICE",
+          "entityNameFilter": "room1-node-b"
         }
       }
     },
