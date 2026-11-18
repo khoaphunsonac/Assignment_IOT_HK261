@@ -1,4 +1,4 @@
-# Cấu hình CoreIOT (issue #32, #39, #46)
+# Cấu hình CoreIOT (issue #32, #39, #46, #47)
 
 Ghi lại cấu hình đã dựng trên **app.coreiot.io** ngày 11/11/2026, để người khác dựng lại hoặc sửa tiếp.
 Key, method RPC và tên thiết bị theo [docs/CONTRACT.md](../../../docs/CONTRACT.md) mục 5, 6.2, 11.
@@ -124,11 +124,38 @@ Notification center:
 - Xem ở chuông thông báo góc trên bên phải. Muốn thêm email/Telegram: sửa template, bật thêm kênh (cần cấu hình mail server / bot của tenant).
 - Rule mặc định `New alarm` của CoreIOT vẫn bật (báo mọi alarm), nên High Temperature có 2 thông báo. Tắt rule đó nếu thấy thừa.
 
+### 5.2. Tự động quạt/đèn T12: rule chain `Room1 Auto Control` (#47)
+
+- File export: [`rulechain_room1_auto.json`](rulechain_room1_auto.json). Import như mục 5.
+- **Root Rule Chain** có thêm node *Rule Chain* `Room1 Auto Control`, nối từ *Message Type Switch* nhánh `Post telemetry` (song song với `Room1 Alarms`). Import trên tài khoản khác thì phải tự thêm node này.
+- Các node:
+  1. Filter `Tu room1-node-a`: chỉ lấy telemetry của `room1-node-a` có `temperature` hoặc `light`.
+  2. *Change originator* `Sang room1-node-b`: nguồn **Entity**, DEVICE, tên `room1-node-b`, vì ngưỡng, trạng thái và RPC đều ở Node B.
+  3. *Originator attributes*: 8 shared attribute ngưỡng (vào metadata với tiền tố `shared_`) + latest telemetry `fan_level`, `light_on`, `mode`. Giá trị trong metadata là **chuỗi**, nên script dùng `parseFloat`/`parseInt`.
+  4. Script `Tinh muc quat, den` (CONTRACT 7, 13):
+     - Quạt có hysteresis: đang 0 thì `t ≥ fan_on_2` lên 2, `t ≥ fan_on_1` lên 1; đang 1 thì `t ≥ fan_on_2` lên 2, `t ≤ fan_off_1` về 0; đang 2 thì `t ≤ fan_off_1` về 0, `t ≤ fan_off_2` về 1.
+     - Đèn: `presence` = true và `light < light_dark` thì bật; `light > light_bright` thì tắt; còn lại giữ nguyên.
+     - `presence` = false thì không tính quạt: Node B ưu tiên tắt hết (CONTRACT 13 mục 1), nếu rule cứ gửi `autoFan` thì sẽ lặp RPC mỗi 2 s.
+  5. Switch `Can gui RPC?`: `mode` khác `auto` thì dừng; chỉ đi nhánh `autoFan` / `autoLight` khi giá trị mới **khác** giá trị hiện tại.
+  6. Script tạo `{method: 'autoFan', params: <int>}` hoặc `{method: 'autoLight', params: <bool>}` → *RPC call request* (timeout 10 s) tới `room1-node-b`. Không bao giờ gửi `setFan`/`setLight` (CONTRACT 11.4).
+- Đổi ngưỡng trên widget `Ngưỡng tự động` có tác dụng ngay ở bản tin kế tiếp, vì rule đọc lại shared attribute mỗi lần.
+- **Điều kiện để chạy:** `room1-node-b` phải có đủ 8 shared attribute ngưỡng và telemetry `fan_level`, `light_on`, `mode`. Thiếu một key thì node lấy attribute đi nhánh **Failure** sang node log `Bao thieu nguong/trang thai` và T12 không gửi gì. Xem ở tab *Events* của node này (debug Failure đã bật). Import sang tài khoản mới thì tạo đủ ngưỡng (mục 1) và chạy `bridge.py` + Node B trước.
+- `fan_level` khác 0/1/2 thì script không đổi mức quạt.
+- Đã thử 18/11 với `fake_node_b.py` + `bridge.py` (bơm thêm bản tin vào `room1/telemetry` bằng paho):
+  - 34 °C, đang quạt 1, auto → `autoFan 2`, trả `ok: true`.
+  - Bấm `setFan 0` (chuyển `manual`), bơm 34 °C → không có `autoFan` nào.
+  - `fan_on_1` = 31, bơm 30.5 °C → không gửi; đổi `fan_on_1` = 30 trên widget, bơm 30.5 °C → `autoFan 1`, `ok: true`.
+  - `presence` = false, 34 °C → không gửi.
+  - Sau khi thêm nhánh Failure (theo review), bơm 34 °C lúc quạt 0 → `autoFan 2`, `ok: true`.
+- Lưu ý:
+  - Hai bản tin node-a sát nhau trước khi Node B kịp báo `fan_level` mới có thể sinh 2 RPC giống nhau. Vô hại vì `autoFan`/`autoLight` gửi cùng giá trị.
+  - `fake_node_b.py` sinh `light` ngẫu nhiên 1200–2600 mỗi 2 s nên đèn bật/tắt liên tục quanh 1500/2500. Cảm biến thật không bị vậy.
+
 ## 6. Việc còn lại
 
 - [x] Đổi 2 alias sang `room1-node-a` / `room1-node-b`, export lại JSON (#46).
 - [x] `inactivityTimeout` = 60000 cho thiết bị thật; nhánh Room Empty lấy trạng thái từ `room1-node-b` (#46).
 - [x] 8 ngưỡng mặc định trên `room1-node-b` (#46).
 - [x] Notification cho High Temperature, Device Offline (#46).
-- [ ] RuleChain T12 (`autoFan`, `autoLight`) – #47.
+- [x] RuleChain T12 (`autoFan`, `autoLight`) – #47, xem mục 5.2.
 - [ ] Xóa device `room1-test` khi không cần nữa.

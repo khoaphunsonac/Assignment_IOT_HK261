@@ -1,0 +1,255 @@
+{
+  "ruleChain": {
+    "name": "Room1 Auto Control",
+    "type": "CORE",
+    "firstRuleNodeId": null,
+    "root": false,
+    "debugMode": false,
+    "configuration": null,
+    "additionalInfo": {
+      "description": "T12: tu bat tat quat/den bang autoFan, autoLight (CONTRACT 7, 11.4, 13). Root Rule Chain chuyen Post telemetry vao day."
+    }
+  },
+  "metadata": {
+    "firstNodeIndex": 0,
+    "nodes": [
+      {
+        "type": "org.thingsboard.rule.engine.filter.TbJsFilterNode",
+        "name": "Tu room1-node-a",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return false;",
+          "tbelScript": "// Chi lay telemetry cua room1-node-a co nhiet do hoac anh sang\nreturn metadata.deviceName == 'room1-node-a' && (msg.temperature != null || msg.light != null);"
+        },
+        "additionalInfo": {
+          "layoutX": 300,
+          "layoutY": 150
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.transform.TbChangeOriginatorNode",
+        "name": "Sang room1-node-b",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 1,
+        "configuration": {
+          "originatorSource": "ENTITY",
+          "entityType": "DEVICE",
+          "entityNamePattern": "room1-node-b",
+          "preserveOriginatorIfCustomer": false,
+          "relationsQuery": {
+            "direction": "FROM",
+            "maxLevel": 1,
+            "filters": [
+              {
+                "relationType": "Contains",
+                "entityTypes": [],
+                "negate": false
+              }
+            ],
+            "fetchLastLevelOnly": false
+          }
+        },
+        "additionalInfo": {
+          "layoutX": 600,
+          "layoutY": 150
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.metadata.TbGetAttributesNode",
+        "name": "Lay nguong + trang thai node-b",
+        "debugSettings": {
+          "failuresEnabled": true,
+          "allEnabled": false,
+          "allEnabledUntil": 0
+        },
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 1,
+        "configuration": {
+          "fetchTo": "METADATA",
+          "clientAttributeNames": [],
+          "sharedAttributeNames": [
+            "fan_on_1",
+            "fan_off_1",
+            "fan_on_2",
+            "fan_off_2",
+            "light_dark",
+            "light_bright",
+            "empty_timeout_s",
+            "manual_timeout_s"
+          ],
+          "serverAttributeNames": [],
+          "latestTsKeyNames": [
+            "fan_level",
+            "light_on",
+            "mode"
+          ],
+          "tellFailureIfAbsent": true,
+          "getLatestValueWithTs": false
+        },
+        "additionalInfo": {
+          "layoutX": 900,
+          "layoutY": 150
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.transform.TbTransformMsgNode",
+        "name": "Tinh muc quat, den",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return {msg: msg, metadata: metadata, msgType: msgType};",
+          "tbelScript": "// CONTRACT 7, 13. Gia tri lay vao metadata la CHUOI, phai parse truoc khi so sanh.\nvar f = parseInt(metadata.fan_level);\nvar lightOn = metadata.light_on == 'true';\nvar fanOn1 = parseFloat(metadata.shared_fan_on_1);\nvar fanOff1 = parseFloat(metadata.shared_fan_off_1);\nvar fanOn2 = parseFloat(metadata.shared_fan_on_2);\nvar fanOff2 = parseFloat(metadata.shared_fan_off_2);\nvar lightDark = parseInt(metadata.shared_light_dark);\nvar lightBright = parseInt(metadata.shared_light_bright);\n\n// Quat, co hysteresis (TASKS_W2 #47).\n// presence = false thi Node B uu tien tat het (CONTRACT 13 muc 1), khong gui de tranh RPC lien tuc.\nvar nextFan = f;\nif (msg.temperature != null && msg.presence != false) {\n  var t = msg.temperature;\n  if (f == 0) {\n    if (t >= fanOn2) { nextFan = 2; } else if (t >= fanOn1) { nextFan = 1; }\n  } else if (f == 1) {\n    if (t >= fanOn2) { nextFan = 2; } else if (t <= fanOff1) { nextFan = 0; }\n  } else if (f == 2) {\n    if (t <= fanOff1) { nextFan = 0; } else if (t <= fanOff2) { nextFan = 1; }\n  }\n}\n\n// Den: co nguoi va toi thi bat, sang thi tat, con lai giu nguyen.\n// Phong trong thi Node B tu tat het (CONTRACT 13), khong lo o day.\nvar nextLight = lightOn;\nif (msg.light != null) {\n  if (msg.presence == true && msg.light < lightDark) { nextLight = true; }\n  else if (msg.light > lightBright) { nextLight = false; }\n}\n\nvar out = {mode: metadata.mode, temperature: msg.temperature, light: msg.light, presence: msg.presence,\n           fan_level: f, light_on: lightOn, next_fan: nextFan, next_light: nextLight};\nreturn {msg: out, metadata: metadata, msgType: msgType};"
+        },
+        "additionalInfo": {
+          "layoutX": 900,
+          "layoutY": 300
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.filter.TbJsSwitchNode",
+        "name": "Can gui RPC?",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return [];",
+          "tbelScript": "// Chi gui khi dang auto va gia tri moi khac gia tri hien tai (telemetry 2 s/lan)\nvar r = [];\nif (msg.mode != 'auto') { return r; }\nif (msg.next_fan != msg.fan_level) { r.add('autoFan'); }\nif (msg.next_light != msg.light_on) { r.add('autoLight'); }\nreturn r;"
+        },
+        "additionalInfo": {
+          "layoutX": 600,
+          "layoutY": 300
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.transform.TbTransformMsgNode",
+        "name": "RPC autoFan",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return {msg: msg, metadata: metadata, msgType: msgType};",
+          "tbelScript": "// CONTRACT 6.2: autoFan params int\nreturn {msg: {method: 'autoFan', params: msg.next_fan}, metadata: metadata, msgType: msgType};"
+        },
+        "additionalInfo": {
+          "layoutX": 300,
+          "layoutY": 420
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.transform.TbTransformMsgNode",
+        "name": "RPC autoLight",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return {msg: msg, metadata: metadata, msgType: msgType};",
+          "tbelScript": "// CONTRACT 6.2: autoLight params bool\nreturn {msg: {method: 'autoLight', params: msg.next_light}, metadata: metadata, msgType: msgType};"
+        },
+        "additionalInfo": {
+          "layoutX": 600,
+          "layoutY": 420
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.rpc.TbSendRPCRequestNode",
+        "name": "Gui RPC toi room1-node-b",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "timeoutInSeconds": 10
+        },
+        "additionalInfo": {
+          "layoutX": 450,
+          "layoutY": 540
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbLogNode",
+        "name": "Bao thieu nguong/trang thai",
+        "debugSettings": {
+          "failuresEnabled": true,
+          "allEnabled": false,
+          "allEnabledUntil": 0
+        },
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return '';",
+          "tbelScript": "// Thieu nguong shared hoac telemetry fan_level/light_on/mode tren room1-node-b: T12 khong chay\nreturn 'Room1 Auto Control: room1-node-b thieu nguong/trang thai, msg=' + JSON.stringify(msg);"
+        },
+        "additionalInfo": {
+          "layoutX": 1200,
+          "layoutY": 150
+        }
+      }
+    ],
+    "connections": [
+      {
+        "fromIndex": 0,
+        "toIndex": 1,
+        "type": "True"
+      },
+      {
+        "fromIndex": 1,
+        "toIndex": 2,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 2,
+        "toIndex": 3,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 3,
+        "toIndex": 4,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 4,
+        "toIndex": 5,
+        "type": "autoFan"
+      },
+      {
+        "fromIndex": 4,
+        "toIndex": 6,
+        "type": "autoLight"
+      },
+      {
+        "fromIndex": 5,
+        "toIndex": 7,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 6,
+        "toIndex": 7,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 2,
+        "toIndex": 8,
+        "type": "Failure"
+      }
+    ],
+    "ruleChainConnections": null
+  }
+}
