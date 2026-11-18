@@ -324,7 +324,11 @@
       {
         "type": "org.thingsboard.rule.engine.metadata.TbGetAttributesNode",
         "name": "Lay fan_level, light_on",
-        "debugSettings": null,
+        "debugSettings": {
+          "failuresEnabled": true,
+          "allEnabled": false,
+          "allEnabledUntil": 0
+        },
         "singletonMode": false,
         "queueName": null,
         "configurationVersion": 1,
@@ -360,6 +364,27 @@
         "additionalInfo": {
           "layoutX": 300,
           "layoutY": 720
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbLogNode",
+        "name": "Bao thieu trang thai node-b",
+        "debugSettings": {
+          "failuresEnabled": true,
+          "allEnabled": false,
+          "allEnabledUntil": 0
+        },
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return '';",
+          "tbelScript": "// room1-node-b chua co telemetry fan_level/light_on: Room Empty khong tao/xoa duoc\nreturn 'Room1 Alarms: room1-node-b thieu fan_level/light_on, msg=' + JSON.stringify(msg);"
+        },
+        "additionalInfo": {
+          "layoutX": 550,
+          "layoutY": 640
         }
       }
     ],
@@ -443,6 +468,11 @@
         "fromIndex": 14,
         "toIndex": 9,
         "type": "roomOccupied"
+      },
+      {
+        "fromIndex": 13,
+        "toIndex": 15,
+        "type": "Failure"
       }
     ],
     "ruleChainConnections": null
