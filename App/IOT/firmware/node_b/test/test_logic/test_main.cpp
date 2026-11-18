@@ -558,6 +558,64 @@ void test_resp_small_buffer(void) {
   TEST_ASSERT_EQUAL_size_t(0, resp_build(&c, CMD_OK, 2, false, LMODE_MANUAL, buf, sizeof(buf)));
 }
 
+// ---------------- 7. cfg_tx_should_send (#43) ----------------
+void test_cfgtx_no_peer(void) {
+  CfgTxState s;
+  cfg_tx_init(&s);
+  TEST_ASSERT_FALSE(cfg_tx_should_send(&s, 600, 1000));
+  TEST_ASSERT_FALSE(cfg_tx_should_send(&s, 600, 100000));  // 100 s vẫn không có Node A
+}
+
+void test_cfgtx_send_after_pair_once(void) {
+  CfgTxState s;
+  cfg_tx_init(&s);
+  cfg_tx_on_pair(&s);
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 600, 1000));
+  TEST_ASSERT_FALSE(cfg_tx_should_send(&s, 600, 2000));
+  TEST_ASSERT_FALSE(cfg_tx_should_send(&s, 600, 30999));
+}
+
+void test_cfgtx_send_on_change(void) {
+  CfgTxState s;
+  cfg_tx_init(&s);
+  cfg_tx_on_pair(&s);
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 600, 1000));
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 30, 3000));    // đổi -> gửi ngay
+  TEST_ASSERT_FALSE(cfg_tx_should_send(&s, 30, 4000));   // đã nhớ 30
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 600, 5000));   // đổi lại cũng gửi
+}
+
+void test_cfgtx_resend_every_30s(void) {
+  CfgTxState s;
+  cfg_tx_init(&s);
+  cfg_tx_on_pair(&s);
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 30, 3000));
+  TEST_ASSERT_FALSE(cfg_tx_should_send(&s, 30, 32999));
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 30, 33000));
+  TEST_ASSERT_FALSE(cfg_tx_should_send(&s, 30, 33001));  // mốc mới là 33000
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 30, 63000));
+}
+
+void test_cfgtx_repair_sends_again(void) {
+  CfgTxState s;
+  cfg_tx_init(&s);
+  cfg_tx_on_pair(&s);
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 30, 3000));
+  cfg_tx_on_pair(&s);                                    // Node A reset, ghép lại
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 30, 4000));    // gửi dù cùng số, mới 1 s
+  TEST_ASSERT_FALSE(cfg_tx_should_send(&s, 30, 5000));
+}
+
+void test_cfgtx_millis_wrap(void) {
+  CfgTxState s;
+  cfg_tx_init(&s);
+  cfg_tx_on_pair(&s);
+  uint32_t t0 = 0xFFFFC000u;  // 16,4 s trước khi millis() tràn
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 30, t0));
+  TEST_ASSERT_FALSE(cfg_tx_should_send(&s, 30, t0 + 29999u));  // đã tràn về số nhỏ
+  TEST_ASSERT_TRUE(cfg_tx_should_send(&s, 30, t0 + 30000u));
+}
+
 static int run_all(void) {
   UNITY_BEGIN();
   // 1
@@ -607,6 +665,13 @@ static int run_all(void) {
   RUN_TEST(test_resp_ignored);
   RUN_TEST(test_resp_bad_json_id_null);
   RUN_TEST(test_resp_small_buffer);
+  // 7 (#43)
+  RUN_TEST(test_cfgtx_no_peer);
+  RUN_TEST(test_cfgtx_send_after_pair_once);
+  RUN_TEST(test_cfgtx_send_on_change);
+  RUN_TEST(test_cfgtx_resend_every_30s);
+  RUN_TEST(test_cfgtx_repair_sends_again);
+  RUN_TEST(test_cfgtx_millis_wrap);
   return UNITY_END();
 }
 

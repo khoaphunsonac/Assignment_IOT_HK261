@@ -1,7 +1,9 @@
 // Hiện thực node_a_logic.h. Mô tả vào/ra của từng hàm xem ở file .h.
-// Test: `pio test -e native` (12 testcase, test/test_logic/test_main.cpp).
+// Test: `pio test -e native` (17 testcase, test/test_logic/test_main.cpp).
 #include "node_a_logic.h"
 #include <math.h>
+#include <string.h>
+#include "espnow_packet.h"  // PktConfig (firmware/common, cần -I ../common)
 
 // Kiểm NaN trước (NaN so sánh gì cũng false), rồi mới kiểm khoảng.
 bool reading_valid(float t, float h) {
@@ -56,4 +58,29 @@ TxAction tx_on_result(TxState *s, bool ok, uint32_t now_ms) {
   // tính đủ 10 s và dẫn tới REPAIR (test_tx_repair_after_10s_across_samples).
   s->retry = 0;
   return TX_GIVE_UP;
+}
+
+// =====================================================================================
+// #43 config_pkt_parse: kiểm gói PKT_CONFIG (test: test_cfgpkt_*)
+// =====================================================================================
+// Ví dụ (gói đúng = magic 0x31544C42, version 1, type 4, empty_timeout_s 30, len 8):
+//   gói đúng                  -> true, *out = 30
+//   len = 7 (hoặc 28)         -> false, *out giữ nguyên
+//   magic 0x12345678          -> false     (board nhóm khác trong phòng lab)
+//   type = PKT_PAIR_RESP (2)  -> false     (len đúng 8 vẫn bị loại)
+//   empty_timeout_s = 0       -> false
+//   empty_timeout_s = 65535   -> true      (lớn nhất uint16_t, hợp lệ)
+// Kiểm len trước memcpy: gói ngắn mà vẫn chép 8 byte là đọc tràn buffer.
+// memcpy vào biến PktConfig rồi mới đọc, không ép kiểu (const PktConfig *)data:
+// data có thể lệch căn lề, đọc uint32_t magic ở địa chỉ lệch là undefined behavior.
+bool config_pkt_parse(const uint8_t *data, int len, uint16_t *out_timeout_s) {
+  if(len != (int)sizeof(PktConfig)) return false;
+  PktConfig pc;
+  memcpy(&pc, data, sizeof(pc));
+  if(pc.hdr.magic != ESPNOW_MAGIC) return false;
+  if(pc.hdr.version != ESPNOW_VERSION) return false;
+  if (pc.hdr.type != PKT_CONFIG) return false;
+  if(pc.empty_timeout_s < EMPTY_TIMEOUT_MIN_S) return false;
+  *out_timeout_s = pc.empty_timeout_s;
+  return true;
 }

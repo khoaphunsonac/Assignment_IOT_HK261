@@ -6,6 +6,7 @@
 #include <WiFi.h>
 #include <esp_now.h>
 
+#include "config_store.h"  // #43: đọc empty_timeout_s đang dùng
 #include "control_ext.h"
 #include "espnow_packet.h"
 #include "net.h"
@@ -29,6 +30,10 @@ static volatile uint32_t s_bad_pkt = 0, s_queue_full = 0;
 static SeqTracker s_seq;
 static TempAvg s_tavg;
 static uint32_t s_pairs = 0;
+// #43: Node A gần nhất đã ghép cặp + trạng thái gửi PKT_CONFIG. Chỉ task_espnow dùng.
+static uint8_t s_node_a_mac[6];
+static CfgTxState s_cfgtx;
+static uint32_t s_cfg_sent = 0;  // số gói PKT_CONFIG đã gửi (in ở dòng thống kê)
 
 // ---------- Callback nhận (chép từ espnow_rx_test) ----------
 // Chạy trong task WiFi của hệ thống: phải ngắn, không printf, không chờ.
@@ -84,7 +89,39 @@ static void handle_pair_req(const RxItem &it) {
   Serial.printf("[B] Node A %02X:%02X:%02X:%02X:%02X:%02X xin ghep cap -> tra loi ch=%d (lan %lu)\n",
                 it.mac[0], it.mac[1], it.mac[2], it.mac[3], it.mac[4], it.mac[5], r.channel,
                 (unsigned long)s_pairs);
-  // #43 (sau): gửi PKT_CONFIG (empty_timeout_s) ngay sau khi ghép cặp.
+  // ----- #43 handle_pair_req: nhớ Node A vừa ghép để gửi PKT_CONFIG -----
+  // Ví dụ: Node A AA:..:01 xin ghép -> s_node_a_mac = AA:..:01, cfg_tx_on_pair
+  //   -> vòng lặp task_espnow kế tiếp (<= 1 s) gửi PKT_CONFIG ngay.
+  // Không gửi thẳng ở đây: để MỌI lần gửi PKT_CONFIG đi qua 1 chỗ (send_config_if_needed),
+  // luật "khi nào gửi" chỉ nằm trong cfg_tx_should_send.
+  memcpy(s_node_a_mac, it.mac, 6);
+  cfg_tx_on_pair(&s_cfgtx);
+}
+
+// ---------- Gửi PKT_CONFIG (#43) ----------
+// Gọi mỗi vòng task_espnow (<= 1 s/lần). Đọc empty_timeout_s ĐANG DÙNG từ config_store
+// (đã kiểm 1..65535 ở thresholds_valid nên ép uint16_t không mất số), hỏi
+// cfg_tx_should_send, nên gửi thì đóng gói PktConfig (CONTRACT 3) gửi unicast tới Node A.
+// Vì sao không cần config_store báo "vừa đổi": vòng này tự so với số đã gửi lần trước,
+// nên dashboard đổi ngưỡng thì <= 1 s sau Node A nhận (config_store không phải gửi gì).
+// Không chờ ACK: mất gói thì 30 s sau tự gửi lại (CFG_RESEND_MS).
+// Lỗi esp_now_send (vd Node A chưa thành peer) chỉ in, 30 s sau thử lại.
+static void send_config_if_needed() {
+  Thresholds th = config_store_get();
+  if (!cfg_tx_should_send(&s_cfgtx, th.empty_timeout_s, millis())) return;
+  PktConfig pc = {};
+  pc.hdr.magic = ESPNOW_MAGIC;
+  pc.hdr.version = ESPNOW_VERSION;
+  pc.hdr.type = PKT_CONFIG;
+  pc.empty_timeout_s = (uint16_t)th.empty_timeout_s;
+  esp_err_t e = esp_now_send(s_node_a_mac, (const uint8_t *)&pc, sizeof(pc));
+  if (e == ESP_OK) {
+    s_cfg_sent++;
+    Serial.printf("[B] Gui PKT_CONFIG empty_timeout=%u s (lan %lu)\n", pc.empty_timeout_s,
+                  (unsigned long)s_cfg_sent);
+  } else {
+    Serial.printf("[B] Gui PKT_CONFIG loi: %s\n", esp_err_to_name(e));
+  }
 }
 
 // ---------- Xử lý 1 gói PKT_DATA ----------
@@ -118,16 +155,18 @@ static void handle_data(const RxItem &it) {
 // Dòng thống kê 10 s, cùng dạng espnow_rx_test để so với lab 13/11.
 static void print_stats() {
   Serial.printf("[B] === ESPNOW nhan=%lu mat=%lu trung=%lu loss=%.2f%% | ghep_cap=%lu A_reset=%lu "
-                "bad=%lu qfull=%lu | WiFi ch=%d\n",
+                "bad=%lu qfull=%lu cfg_sent=%lu | WiFi ch=%d\n",
                 (unsigned long)s_seq.rx, (unsigned long)s_seq.lost, (unsigned long)s_seq.dup,
                 seq_loss_pct(&s_seq), (unsigned long)s_pairs, (unsigned long)s_seq.a_resets,
-                (unsigned long)s_bad_pkt, (unsigned long)s_queue_full, WiFi.channel());
+                (unsigned long)s_bad_pkt, (unsigned long)s_queue_full, (unsigned long)s_cfg_sent,
+                WiFi.channel());
 }
 
 bool espnow_rx_init() {
   pinMode(LED_PIN, OUTPUT);
   seq_init(&s_seq);
   temp_avg_init(&s_tavg);
+  cfg_tx_init(&s_cfgtx);  // #43
   s_rx_queue = xQueueCreate(RX_QUEUE_LEN, sizeof(RxItem));
   if (s_rx_queue == NULL) return false;
   if (esp_now_init() != ESP_OK) return false;
@@ -148,6 +187,10 @@ void task_espnow(void *pvParameters) {
       else if (h.type == PKT_DATA) handle_data(it);
       else s_bad_pkt++;
     }
+
+    // #43: gọi mỗi vòng (<= 1 s), kể cả khi không có gói, để gửi lại 30 s/lần vẫn chạy.
+    send_config_if_needed();
+
     if (millis() - last_stats >= STATS_PERIOD_MS) {
       last_stats = millis();
       print_stats();

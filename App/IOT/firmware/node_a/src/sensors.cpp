@@ -7,6 +7,10 @@
 DHT20 dht20;
 static PresenceState presence_state;   // nhớ lần cuối PIR thấy chuyển động
 static uint16_t dht_fail_count = 0;     // tổng số lần DHT20 lỗi từ lúc boot
+// #43: thời gian chờ phòng trống (giây). task_espnow_tx GHI, task_sensor ĐỌC.
+// uint16_t ghi/đọc 1 lệnh trên ESP32 (căn lề 2 byte) nên không cần mutex; volatile để
+// compiler không giữ bản cũ trong thanh ghi. Mất điện -> về 60 tới khi B gửi PKT_CONFIG.
+static volatile uint16_t s_empty_timeout_s = EMPTY_TIMEOUT_DEFAULT_S;
 
 // Thứ tự như LAB3: Wire.begin(SDA, SCL) rồi dht20.begin().
 // DHT20 không trả lời lúc boot thì chỉ in cảnh báo, KHÔNG dừng: các lần đọc sau tự thử lại.
@@ -47,6 +51,11 @@ void sensors_read(SensorSample *out) {
 
   // Ánh sáng và PIR không phụ thuộc DHT20 nên luôn đọc.
   out->light = analogRead(PIN_LIGHT);
-  out->presence = presence_update(&presence_state, digitalRead(PIN_PIR) == HIGH, millis(), EMPTY_TIMEOUT_S * 1000);
+  out->presence = presence_update(&presence_state, digitalRead(PIN_PIR) == HIGH, millis(), (uint32_t)s_empty_timeout_s * 1000u);
   out->dht_fail = dht_fail_count;
 }
+
+// #43. Ở sensors_read ép (uint32_t) trước khi nhân 1000: 65535 * 1000 = 65.535.000
+// vượt uint16_t, phải nhân trong kiểu 32 bit (đúng kiểu tham số timeout_ms).
+void sensors_set_empty_timeout_s(uint16_t s) { s_empty_timeout_s = s; }
+uint16_t sensors_get_empty_timeout_s() { return s_empty_timeout_s; }

@@ -11,14 +11,15 @@
 #define PIN_SDA   11
 #define PIN_SCL   12
 
-#define EMPTY_TIMEOUT_S 60  // W1: hằng số demo (CONTRACT mục 3). W2 nhận PKT_CONFIG.
+// Thời gian chờ phòng trống: W1 là hằng 60 s. Từ #43 là biến, mặc định
+// EMPTY_TIMEOUT_DEFAULT_S (60, node_a_logic.h), Node B đổi bằng PKT_CONFIG.
 
 // 1 mẫu đo: task_sensor tạo mỗi 2 s rồi đưa qua sample_queue cho task_espnow_tx.
 typedef struct {
   float    temperature;  // °C, chỉ có nghĩa khi valid = true
   float    humidity;     // %
   uint16_t light;        // ADC thô 0..4095
-  uint8_t  presence;     // 0/1, đã tính EMPTY_TIMEOUT_S
+  uint8_t  presence;     // 0/1, đã tính thời gian chờ phòng trống
   bool     valid;        // false: DHT20 lỗi hoặc ngoài khoảng -> KHÔNG gửi mẫu này
   uint16_t dht_fail;     // tổng số lần DHT20 lỗi từ lúc khởi động
 } SensorSample;
@@ -31,3 +32,12 @@ void sensors_init();
 //   valid cho biết T/H dùng được không.
 //   Không gọi nhanh hơn 1 lần/giây (thư viện DHT20 sẽ trả DHT20_ERROR_LASTREAD).
 void sensors_read(SensorSample *out);
+
+// sensors_set_empty_timeout_s (#43): đổi thời gian chờ phòng trống (giây).
+//   Vào : s = số giây, đã kiểm >= 1 (config_pkt_parse). Gọi từ task_espnow_tx.
+//   Có hiệu lực ngay ở lần đọc sau (<= 2 s): presence_update so với last_motion_ms
+//   nên giảm 600 -> 30 mà người đã đi 40 s thì lần đọc sau báo trống luôn.
+void sensors_set_empty_timeout_s(uint16_t s);
+
+// sensors_get_empty_timeout_s (#43): số giây đang dùng (để in log / so trước khi đổi).
+uint16_t sensors_get_empty_timeout_s();
