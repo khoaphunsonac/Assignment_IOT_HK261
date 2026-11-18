@@ -99,13 +99,11 @@ bool control_set_fan(uint8_t level, CmdSource src) {
   lock();
   CtrlLogic before = s_ctrl;
   CmdErr e = CMD_BAD_PARAMS;
-  // điền: e = ctrl_set_fan(&s_ctrl, level, src == CmdSource::Rule, millis());
+  e = ctrl_set_fan(&s_ctrl, level, src == CmdSource::Rule, millis());
   apply_outputs_locked();
   bool changed = !same_state(before, s_ctrl);
   unlock();
   if (changed) net_request_telemetry();
-  (void)level;
-  (void)src;  // xóa 2 dòng (void) này
   return e == CMD_OK;
 }
 
@@ -113,13 +111,11 @@ bool control_set_light(bool on, CmdSource src) {
   lock();
   CtrlLogic before = s_ctrl;
   CmdErr e = CMD_BAD_PARAMS;
-  // điền: e = ctrl_set_light(&s_ctrl, on, src == CmdSource::Rule, millis());
+  e = ctrl_set_light(&s_ctrl, on, src == CmdSource::Rule, millis());
   apply_outputs_locked();
   bool changed = !same_state(before, s_ctrl);
   unlock();
   if (changed) net_request_telemetry();
-  (void)on;
-  (void)src;  // xóa 2 dòng (void) này
   return e == CMD_OK;
 }
 
@@ -127,13 +123,11 @@ bool control_set_mode(Mode m) {
   lock();
   CtrlLogic before = s_ctrl;
   CmdErr e = CMD_BAD_PARAMS;
-  // điền: e = ctrl_set_mode(&s_ctrl, static_cast<LMode>(m), millis());
-  //       static_cast<LMode>(m): đổi Mode (control.h) sang LMode (logic), 2 enum cùng thứ tự.
+  e = ctrl_set_mode(&s_ctrl, static_cast<LMode>(m), millis());
   apply_outputs_locked();
   bool changed = !same_state(before, s_ctrl);
   unlock();
   if (changed) net_request_telemetry();
-  (void)m;  // xóa dòng này
   return e == CMD_OK;
 }
 
@@ -168,18 +162,19 @@ const char *mode_to_str(Mode m) { return lmode_str(static_cast<LMode>(m)); }
 // =====================================================================================
 
 void control_on_node_a(const PktData *d, float temp_avg, float loss_pct) {
-  // TODO 11: chép gói Node A vào s_node_a (espnow_rx gọi mỗi gói mới).
   lock();
   s_node_a.seq = d->seq;
   s_node_a.temperature = temp_avg;  // lấy số TRUNG BÌNH, không lấy d->temperature
-  // điền: humidity, light, anomaly_score, dht_fail (gán thẳng từ d->...)
-  // điền: s_node_a.presence = d->presence != 0;   (uint8_t 0/1 -> bool)
-  // điền: s_node_a.anomaly  = d->anomaly != 0;
-  // điền: s_node_a.espnow_loss = loss_pct;
+  s_node_a.humidity = d->humidity;
+  s_node_a.light = d->light;
+  s_node_a.anomaly_score = d->anomaly_score;
+  s_node_a.dht_fail = d->dht_fail;
+  s_node_a.presence = d->presence != 0;
+  s_node_a.anomaly = d->anomaly != 0;
+  s_node_a.espnow_loss = loss_pct;
   s_node_a.online = true;
   s_node_a_last_ms = millis();  // mốc để control_tick biết Node A còn sống không
   unlock();
-  (void)loss_pct;  // xóa dòng này
 }
 
 // VIẾT SẴN
@@ -200,8 +195,6 @@ void control_get_lstate(uint8_t *fan, bool *light, LMode *mode) {
 }
 
 CmdErr control_apply_cmd(const ParsedCmd *c) {
-  // TODO 12: áp 1 lệnh MQTT. Cùng khuôn TODO 10, nhưng trả CmdErr (để resp biết
-  // ignored_not_auto hay bad_params), nên không gọi lại control_set_fan được.
   uint32_t now = millis();
   lock();
   CtrlLogic before = s_ctrl;
@@ -209,10 +202,10 @@ CmdErr control_apply_cmd(const ParsedCmd *c) {
   switch (c->method) {
     case M_SET_FAN:  e = ctrl_set_fan(&s_ctrl, c->level, false, now); break;  // lệnh tay
     case M_AUTO_FAN: e = ctrl_set_fan(&s_ctrl, c->level, true, now); break;   // lệnh rule
-    // điền: case M_SET_LIGHT:  ...  (giống 2 dòng trên, dùng ctrl_set_light và c->on)
-    // điền: case M_AUTO_LIGHT: ...
-    // điền: case M_SET_MODE:   e = ctrl_set_mode(&s_ctrl, c->mode, now); break;
-    // điền: case M_GET_STATE:  e = CMD_OK; break;            (chỉ hỏi, không đổi gì)
+    case M_SET_LIGHT: e = ctrl_set_light(&s_ctrl, c->on, false, now); break;
+    case M_AUTO_LIGHT: e = ctrl_set_light(&s_ctrl, c->on, true, now); break;
+    case M_SET_MODE: e = ctrl_set_mode(&s_ctrl, c->mode, now); break;
+    case M_GET_STATE: e = CMD_OK; break;
     default:         e = CMD_UNKNOWN_METHOD; break;
   }
   apply_outputs_locked();
@@ -223,22 +216,20 @@ CmdErr control_apply_cmd(const ParsedCmd *c) {
 }
 
 bool control_tick(uint32_t manual_timeout_ms) {
-  // TODO 13: main gọi 200 ms/lần. Trả true nếu có gì đổi.
   uint32_t now = millis();
   bool lost = false;  // Node A vừa bị coi là mất trong lần gọi này?
   lock();
   // Bước 1: Node A im quá 10 s -> mất
-  if (s_node_a.online /* điền: && now - s_node_a_last_ms > NODE_A_TIMEOUT_MS */) {
-    // điền: s_node_a.online = false; lost = true;
+  if (s_node_a.online && now - s_node_a_last_ms > NODE_A_TIMEOUT_MS) {
+    s_node_a.online = false; 
+    lost = true;
   }
   // Bước 2: áp luật phòng trống / hết giờ manual
   CtrlLogic before = s_ctrl;
-  // điền: ctrl_tick(&s_ctrl, s_node_a.online, s_node_a.presence, now, manual_timeout_ms);
+  ctrl_tick(&s_ctrl, s_node_a.online, s_node_a.presence, now, manual_timeout_ms);
   apply_outputs_locked();
   bool changed = lost || !same_state(before, s_ctrl);
   unlock();
   if (lost) Serial.println("[B] node_a_online = false");  // in SAU unlock (Serial chậm)
-  (void)now;
-  (void)manual_timeout_ms;  // xóa 2 dòng này
   return changed;
 }
