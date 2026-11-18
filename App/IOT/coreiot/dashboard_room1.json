@@ -4,7 +4,7 @@
   "mobileHide": false,
   "mobileOrder": null,
   "configuration": {
-    "description": "Dashboard phòng 1 (issue #32). Alias sensor_node/actuator_node đang trỏ room1-test; khi có Gateway đổi sang room1-node-a/room1-node-b.",
+    "description": "Dashboard phòng 1 (issue #32, #46). Alias sensor_node tìm thiết bị tên room1-node-a, actuator_node tìm room1-node-b (sau Gateway room1-gateway).",
     "widgets": {
       "8e3d97f4-c2c5-41a7-b0c7-1316f936692a": {
         "typeFullFqn": "system.cards.value_card",
@@ -2776,24 +2776,20 @@
         "id": "b4167588-f73f-4f55-ab16-26ce56269fa6",
         "alias": "sensor_node",
         "filter": {
-          "type": "singleEntity",
+          "type": "entityName",
           "resolveMultiple": false,
-          "singleEntity": {
-            "entityType": "DEVICE",
-            "id": "a13b9e20-dd7f-11f1-9298-f795494fee72"
-          }
+          "entityType": "DEVICE",
+          "entityNameFilter": "room1-node-a"
         }
       },
       "d7f425ee-e53f-49c2-831b-f65db12898c3": {
         "id": "d7f425ee-e53f-49c2-831b-f65db12898c3",
         "alias": "actuator_node",
         "filter": {
-          "type": "singleEntity",
+          "type": "entityName",
           "resolveMultiple": false,
-          "singleEntity": {
-            "entityType": "DEVICE",
-            "id": "a13b9e20-dd7f-11f1-9298-f795494fee72"
-          }
+          "entityType": "DEVICE",
+          "entityNameFilter": "room1-node-b"
         }
       }
     },

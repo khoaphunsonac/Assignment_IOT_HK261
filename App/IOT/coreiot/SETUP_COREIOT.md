@@ -1,20 +1,26 @@
-# Cấu hình CoreIOT (issue #32)
+# Cấu hình CoreIOT (issue #32, #39, #46)
 
 Ghi lại cấu hình đã dựng trên **app.coreiot.io** ngày 11/11/2026, để người khác dựng lại hoặc sửa tiếp.
 Key, method RPC và tên thiết bị theo [docs/CONTRACT.md](../../../docs/CONTRACT.md) mục 5, 6.2, 11.
 
 - Nền tảng: CoreIOT = ThingsBoard **PE 4.2.0**, tài khoản Tenant administrator của Khoa.
-- Tuần W1 chưa có Gateway, nên mọi widget đọc từ một device tạm `room1-test`, dữ liệu do `fake_telemetry.py` gửi.
+- Từ W2 (#46) dashboard và cảnh báo chạy với thiết bị thật `room1-node-a`, `room1-node-b` sau Gateway `room1-gateway` (`bridge.py`). Device tạm `room1-test` (W1, `fake_telemetry.py`) vẫn giữ để thử nhanh không cần Gateway.
 
 ## 1. Device
 
 | Tên | Profile | Label | ID |
 |---|---|---|---|
+| `room1-gateway` | `default`, **Is gateway** | Gateway Room 1 (`bridge.py`) | `f2266a90-e2e8-11f1-8cd8-29dc599bec29` |
+| `room1-node-a` | `default` | do Gateway tự tạo (`v1/gateway/connect`) | `088afda0-e2e9-11f1-8cd8-29dc599bec29` |
+| `room1-node-b` | `default` | do Gateway tự tạo | `08b9aec0-e2e9-11f1-8cd8-29dc599bec29` |
 | `room1-test` | `default` | Room 1 test (du lieu gia, issue #32) | `a13b9e20-dd7f-11f1-9298-f795494fee72` |
 
-- Credentials: **Access Token** (mặc định của ThingsBoard). Lấy ở Entities → Devices → `room1-test` → *Copy access token*.
-- Token **không** ghi vào repo. Dán vào `App/IOT/coreiot/.env` (chép từ `.env.example`), key `COREIOT_TEST_TOKEN`.
-- Khi Gateway (#28) chạy, `room1-node-a` và `room1-node-b` sẽ do Gateway tự tạo. Lúc đó có thể xóa `room1-test`.
+- Credentials: **Access Token**. Token **không** ghi vào repo.
+  - `room1-gateway`: dán vào `App/IOT/gateway/.env`, key `COREIOT_TOKEN` (xem README gateway). Ai chạy `bridge.py` thì xin token này trong nhóm (chỉ chạy **một** bridge một lúc).
+  - `room1-test`: dán vào `App/IOT/coreiot/.env`, key `COREIOT_TEST_TOKEN`.
+- `room1-node-a`, `room1-node-b` không có token riêng: Gateway gửi thay qua `v1/gateway/*` (CONTRACT 11).
+- Server attribute `inactivityTimeout` = `60000` đã đặt cho `room1-gateway`, `room1-node-a`, `room1-node-b`, `room1-test`.
+- Shared attribute 8 ngưỡng mặc định (CONTRACT 7) đã đặt trên `room1-node-b`. `bridge.py` lấy về lúc khởi động và khi đổi, đẩy xuống `room1/config` (retained).
 
 ## 2. Gửi dữ liệu giả
 
@@ -39,14 +45,15 @@ python fake_telemetry.py
 
 ### 3.1. Entity alias
 
-Mọi widget lấy dữ liệu qua alias, không trỏ thẳng device. Khi có Gateway chỉ cần đổi alias, không phải làm lại widget.
+Mọi widget lấy dữ liệu qua alias, không trỏ thẳng device.
 
-| Alias | Kiểu | Hiện trỏ tới | Khi có Gateway (#28) đổi sang |
-|---|---|---|---|
-| `sensor_node` | Single entity | `room1-test` | `room1-node-a` |
-| `actuator_node` | Single entity | `room1-test` | `room1-node-b` |
+| Alias | Kiểu | Trỏ tới |
+|---|---|---|
+| `sensor_node` | Entity name, DEVICE, `room1-node-a` | `room1-node-a` |
+| `actuator_node` | Entity name, DEVICE, `room1-node-b` | `room1-node-b` |
 
-Cách đổi: mở dashboard → Edit (bút chì) → biểu tượng *Entity aliases* → sửa từng alias → Save.
+- Alias tìm theo **tên** thiết bị (không theo ID), nên import dashboard sang tài khoản khác vẫn chạy nếu có thiết bị đúng tên.
+- Muốn thử với `room1-test`: Edit → *Entity aliases* → đổi tên lọc thành `room1-test` → Save (đừng Save khi demo).
 
 ### 3.2. Widget
 
@@ -72,12 +79,12 @@ Ghi chú:
 - `anomaly_score` theo CONTRACT 11.2 thuộc `room1-node-a`, nên widget này dùng alias `sensor_node`.
 - Nút quạt: RPC **two-way** (`oneWayElseTwoWay = false`), timeout 5000 ms, để thấy được trả lời hoặc lỗi timeout.
 - Hai công tắc lấy **trạng thái ban đầu từ telemetry** (`light_on`; `mode` qua hàm `return data === 'auto';`), không gọi RPC `getState`. Cách này chạy được cả khi chưa có ai trả RPC. Bật là gửi giá trị đầu, tắt là gửi giá trị sau, timeout 5000 ms.
-- Widget **Ngưỡng tự động** sửa shared attribute của `actuator_node` (sau này là `room1-node-b`), bấm *Lưu ngưỡng* là gửi cả 8 key (`updateAllValues`). Widget chỉ kiểm từng ô (bắt buộc, min/max), **không** kiểm ràng buộc `fan_off_1 < fan_on_1 <= fan_off_2 < fan_on_2`, `light_dark < light_bright`: Gateway kiểm (CONTRACT 7). Trên `room1-test` đã đặt sẵn giá trị mặc định.
+- Widget **Ngưỡng tự động** sửa shared attribute của `actuator_node` (sau này là `room1-node-b`), bấm *Lưu ngưỡng* là gửi cả 8 key (`updateAllValues`). Widget chỉ kiểm từng ô (bắt buộc, min/max), **không** kiểm ràng buộc `fan_off_1 < fan_on_1 <= fan_off_2 < fan_on_2`, `light_dark < light_bright`: Gateway kiểm (CONTRACT 7). Trên `room1-node-b` đã đặt sẵn giá trị mặc định.
 - RuleChain sau này chỉ gửi `autoFan`/`autoLight`. Dashboard chỉ gửi `setFan`/`setLight`/`setMode` (CONTRACT 11.4).
 
 ## 4. Import lại dashboard
 
-Dashboards → **+** → *Import dashboard* → chọn `dashboard_room1.json` → ở bước alias chọn device cho `sensor_node` và `actuator_node`.
+Dashboards → **+** → *Import dashboard* → chọn `dashboard_room1.json`. Alias tự tìm `room1-node-a`, `room1-node-b` theo tên, nên chạy `bridge.py` trước một lần để 2 thiết bị được tạo.
 
 ## 5. Cảnh báo T13: rule chain `Room1 Alarms`
 
@@ -91,20 +98,37 @@ Dashboards → **+** → *Import dashboard* → chọn `dashboard_room1.json` �
 | `anomaly` = true | `Anomaly` | WARNING | `anomaly` = false |
 | `event_level` = warning | `AI Event` | WARNING | không, phải Ack/Clear tay |
 | Thiết bị không gửi > 1 phút | `Device Offline` | WARNING | có dữ liệu lại |
-| `presence` = false, `fan_level` = 0, `light_on` = false | `Room Empty` | INDETERMINATE (= Info) | `presence` = true |
+| `presence` = false (node-a), `fan_level` = 0, `light_on` = false (node-b) | `Room Empty` (trên `room1-node-b`) | INDETERMINATE (= Info) | `presence` = true |
 | `fw_state` = `UPDATED` / `FAILED` | `OTA Success` / `OTA Failed` | INDETERMINATE (= Info) | không |
 
 Ghi chú:
 - ThingsBoard không có mức `INFO`, nên Info dùng `INDETERMINATE`.
-- **Offline** dùng server attribute `inactivityTimeout` = `60000` (ms) của từng thiết bị. Đã đặt cho `room1-test`. Khi có `room1-node-a`, `room1-node-b`, `room1-gateway` phải đặt lại cho từng cái (Device → Attributes → Server attributes → **+**).
-- **Room Empty** hiện chỉ đúng khi `presence` và `fan_level`/`light_on` nằm chung một bản tin (`room1-test`). Khi tách 2 thiết bị (CONTRACT 11.2) thì `presence` ở `room1-node-a`, quạt/đèn ở `room1-node-b`: cần thêm bước lấy telemetry mới nhất của `room1-node-b` trước switch. Làm khi có Gateway.
+- **Offline** dùng server attribute `inactivityTimeout` = `60000` (ms) của từng thiết bị (đã đặt, xem mục 1). Thêm thiết bị mới thì đặt ở Device → Attributes → Server attributes → **+**.
+- **Room Empty** (#46): `presence` ở `room1-node-a`, quạt/đèn ở `room1-node-b` (CONTRACT 11.2). Switch đầu thấy bản tin có `presence` mà không có `fan_level` thì đi nhánh `presenceCheck`:
+  1. *Change originator* `Sang room1-node-b`: nguồn **Entity**, DEVICE, tên `room1-node-b`.
+  2. *Originator attributes* `Lay fan_level, light_on`: latest telemetry `fan_level`, `light_on` vào **metadata** (giá trị là chuỗi).
+  3. Switch TBEL `Kiem tra phong trong`: `presence == false && parseInt(metadata.fan_level) == 0 && metadata.light_on == 'false'` → `roomEmpty`; `presence == true` → `roomOccupied`.
+
+  Vì đã đổi originator nên alarm `Room Empty` nằm trên `room1-node-b` (thiết bị đã tắt quạt/đèn). Bản tin gộp kiểu `room1-test` vẫn đi nhánh cũ.
+  Lúc vừa trống, Node B cần ~1 bản tin (2 s) mới báo `fan_level = 0`, nên alarm có thể trễ 2–4 s.
+  `room1-node-b` phải có sẵn telemetry `fan_level`, `light_on` (chạy `bridge.py` + Node B ít nhất một lần). Thiếu thì node lấy trạng thái đi nhánh **Failure** sang node log `Bao thieu trang thai node-b`: Room Empty không tạo, không tự xóa được. Xem ở tab *Events* (debug Failure đã bật) của 2 node này.
 - **OTA**: đang giả sử Gateway đổi state sang `fw_state` chuẩn ThingsBoard (`UPDATED`, `FAILED`). Chờ #29 chốt cách đổi rồi sửa nếu khác.
 - Đã thử 13/11 trên `room1-test`: gửi 36.5 °C ra CRITICAL, về 30 °C tự xóa; dừng gửi 1 phút ra `Device Offline`.
+- Đã thử 18/11 với `fake_node_b.py` + `bridge.py`: High Temperature trên `room1-node-a`, Room Empty trên `room1-node-b` tạo và tự xóa; tắt `bridge.py` > 1 phút ra `Device Offline` cho cả 3 thiết bị.
 
-## 6. Việc còn lại (tuần sau)
+### 5.1. Notification (T13)
 
-- [ ] Khi #28 xong: đổi 2 alias sang `room1-node-a` / `room1-node-b`, export lại JSON.
-- [ ] Đặt `inactivityTimeout` = 60000 cho các thiết bị thật; sửa nhánh Room Empty để lấy trạng thái từ `room1-node-b`.
-- [ ] Đặt giá trị mặc định 8 ngưỡng (shared attribute) trên `room1-node-b`.
-- [ ] RuleChain T12 (`autoFan`, `autoLight`).
+Notification center:
+- Template `Room1 canh bao quan trong` (loại Alarm, kênh **Web**): tiêu đề `Room 1: ${alarmType} (${alarmSeverity})`, nội dung có tên thiết bị.
+- Rule `Room1: Nhiet do cao / Mat ket noi`: trigger **Alarm**, loại `High Temperature`, `Device Offline`, khi **Created**; gửi tới *Tenant administrators*.
+- Xem ở chuông thông báo góc trên bên phải. Muốn thêm email/Telegram: sửa template, bật thêm kênh (cần cấu hình mail server / bot của tenant).
+- Rule mặc định `New alarm` của CoreIOT vẫn bật (báo mọi alarm), nên High Temperature có 2 thông báo. Tắt rule đó nếu thấy thừa.
+
+## 6. Việc còn lại
+
+- [x] Đổi 2 alias sang `room1-node-a` / `room1-node-b`, export lại JSON (#46).
+- [x] `inactivityTimeout` = 60000 cho thiết bị thật; nhánh Room Empty lấy trạng thái từ `room1-node-b` (#46).
+- [x] 8 ngưỡng mặc định trên `room1-node-b` (#46).
+- [x] Notification cho High Temperature, Device Offline (#46).
+- [ ] RuleChain T12 (`autoFan`, `autoLight`) – #47.
 - [ ] Xóa device `room1-test` khi không cần nữa.

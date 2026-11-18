@@ -23,7 +23,7 @@
         "configuration": {
           "scriptLang": "TBEL",
           "jsScript": "return [];",
-          "tbelScript": "// CONTRACT 11.7. Chi xu ly thiet bi room1-*\nvar r = [];\nvar name = metadata.deviceName;\nif (name == null || !name.startsWith('room1')) { return r; }\nif (msgType == 'INACTIVITY_EVENT') { r.add('offline'); return r; }\nif (msgType == 'ACTIVITY_EVENT') { r.add('online'); return r; }\nif (msg.temperature != null) {\n  if (msg.temperature >= 35) { r.add('tempHigh'); } else { r.add('tempOk'); }\n}\nif (msg.anomaly != null) {\n  if (msg.anomaly == true) { r.add('anomaly'); } else { r.add('anomalyOk'); }\n}\nif (msg.event_level == 'warning') { r.add('aiWarning'); }\nif (msg.presence != null) {\n  if (msg.presence == false && msg.fan_level == 0 && msg.light_on == false) { r.add('roomEmpty'); }\n  else if (msg.presence == true) { r.add('roomOccupied'); }\n}\nif (msg.fw_state == 'UPDATED') { r.add('otaSuccess'); }\nif (msg.fw_state == 'FAILED') { r.add('otaFailed'); }\nreturn r;"
+          "tbelScript": "// CONTRACT 11.7. Chi xu ly thiet bi room1-*\nvar r = [];\nvar name = metadata.deviceName;\nif (name == null || !name.startsWith('room1')) { return r; }\nif (msgType == 'INACTIVITY_EVENT') { r.add('offline'); return r; }\nif (msgType == 'ACTIVITY_EVENT') { r.add('online'); return r; }\nif (msg.temperature != null) {\n  if (msg.temperature >= 35) { r.add('tempHigh'); } else { r.add('tempOk'); }\n}\nif (msg.anomaly != null) {\n  if (msg.anomaly == true) { r.add('anomaly'); } else { r.add('anomalyOk'); }\n}\nif (msg.event_level == 'warning') { r.add('aiWarning'); }\nif (msg.presence != null) {\n  if (msg.fan_level != null) {\n    // Tin gop (room1-test): co du presence + fan_level + light_on\n    if (msg.presence == false && msg.fan_level == 0 && msg.light_on == false) { r.add('roomEmpty'); }\n    else if (msg.presence == true) { r.add('roomOccupied'); }\n  } else {\n    // presence o room1-node-a, fan/den o room1-node-b: sang nhanh kiem tra\n    r.add('presenceCheck');\n  }\n}\nif (msg.fw_state == 'UPDATED') { r.add('otaSuccess'); }\nif (msg.fw_state == 'FAILED') { r.add('otaFailed'); }\nreturn r;"
         },
         "additionalInfo": {
           "layoutX": 300,
@@ -290,6 +290,102 @@
           "layoutX": 800,
           "layoutY": 850
         }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.transform.TbChangeOriginatorNode",
+        "name": "Sang room1-node-b",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 1,
+        "configuration": {
+          "originatorSource": "ENTITY",
+          "entityType": "DEVICE",
+          "entityNamePattern": "room1-node-b",
+          "preserveOriginatorIfCustomer": false,
+          "relationsQuery": {
+            "direction": "FROM",
+            "maxLevel": 1,
+            "filters": [
+              {
+                "relationType": "Contains",
+                "entityTypes": [],
+                "negate": false
+              }
+            ],
+            "fetchLastLevelOnly": false
+          }
+        },
+        "additionalInfo": {
+          "layoutX": 300,
+          "layoutY": 560
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.metadata.TbGetAttributesNode",
+        "name": "Lay fan_level, light_on",
+        "debugSettings": {
+          "failuresEnabled": true,
+          "allEnabled": false,
+          "allEnabledUntil": 0
+        },
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 1,
+        "configuration": {
+          "fetchTo": "METADATA",
+          "clientAttributeNames": [],
+          "sharedAttributeNames": [],
+          "serverAttributeNames": [],
+          "latestTsKeyNames": [
+            "fan_level",
+            "light_on"
+          ],
+          "tellFailureIfAbsent": true,
+          "getLatestValueWithTs": false
+        },
+        "additionalInfo": {
+          "layoutX": 300,
+          "layoutY": 640
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.filter.TbJsSwitchNode",
+        "name": "Kiem tra phong trong",
+        "debugSettings": null,
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return [];",
+          "tbelScript": "// metadata la chuoi: fan_level \"0\", light_on \"false\"\nvar r = [];\nif (msg.presence == false && parseInt(metadata.fan_level) == 0 && metadata.light_on == 'false') { r.add('roomEmpty'); }\nelse if (msg.presence == true) { r.add('roomOccupied'); }\nreturn r;"
+        },
+        "additionalInfo": {
+          "layoutX": 300,
+          "layoutY": 720
+        }
+      },
+      {
+        "type": "org.thingsboard.rule.engine.action.TbLogNode",
+        "name": "Bao thieu trang thai node-b",
+        "debugSettings": {
+          "failuresEnabled": true,
+          "allEnabled": false,
+          "allEnabledUntil": 0
+        },
+        "singletonMode": false,
+        "queueName": null,
+        "configurationVersion": 0,
+        "configuration": {
+          "scriptLang": "TBEL",
+          "jsScript": "return '';",
+          "tbelScript": "// room1-node-b chua co telemetry fan_level/light_on: Room Empty khong tao/xoa duoc\nreturn 'Room1 Alarms: room1-node-b thieu fan_level/light_on, msg=' + JSON.stringify(msg);"
+        },
+        "additionalInfo": {
+          "layoutX": 550,
+          "layoutY": 640
+        }
       }
     ],
     "connections": [
@@ -347,6 +443,36 @@
         "fromIndex": 0,
         "toIndex": 11,
         "type": "otaFailed"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 12,
+        "type": "presenceCheck"
+      },
+      {
+        "fromIndex": 12,
+        "toIndex": 13,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 13,
+        "toIndex": 14,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 14,
+        "toIndex": 8,
+        "type": "roomEmpty"
+      },
+      {
+        "fromIndex": 14,
+        "toIndex": 9,
+        "type": "roomOccupied"
+      },
+      {
+        "fromIndex": 13,
+        "toIndex": 15,
+        "type": "Failure"
       }
     ],
     "ruleChainConnections": null
