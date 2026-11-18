@@ -1,7 +1,6 @@
-// node_b_logic.cpp - phần Minh viết: TODO 1–9.
-// Cách làm mỗi TODO: khung if đã có sẵn, chỉ điền vào chỗ "// điền:". Hàm "VIẾT SẴN" không sửa.
-// Mỗi TODO xong chạy:  pio test -e native   (đích cuối: 37 Tests 0 Failures)
-// Muốn hiểu sâu hơn hàm làm gì thì đọc comment cùng tên trong node_b_logic.h.
+// node_b_logic.cpp - thân các hàm của node_b_logic.h.
+// Mô tả đầu vào / đầu ra / quy tắc của từng hàm: xem comment cùng tên trong node_b_logic.h.
+// Test: test/test_logic/test_main.cpp, chạy `pio test -e native`.
 #include "node_b_logic.h"
 
 #include <ArduinoJson.h>
@@ -9,30 +8,35 @@
 #include <stdio.h>
 #include <string.h>
 
-// VIẾT SẴN: chép chuỗi an toàn (dài quá thì cắt, luôn có '\0' cuối).
+// Chép chuỗi an toàn (dài quá thì cắt, luôn có '\0' cuối).
 // Không dùng strlcpy vì g++ trên Windows (MinGW) không có hàm này.
 static void copy_str(char *dst, size_t cap, const char *src) {
   snprintf(dst, cap, "%s", src ? src : "");
 }
 
 // =====================================================================================
-// TODO 1: đếm seq                                   test: test_seq_* (5 test)
+// 1. Đếm seq gói ESP-NOW
 // =====================================================================================
 
-// VIẾT SẴN: xóa sổ về 0.
 void seq_init(SeqTracker *t) { memset(t, 0, sizeof(*t)); }
 
+// Ví dụ, vừa nhận seq 10 (expected = 11), gói tới có seq:
+//   11 -> gói mới bình thường     10 -> trùng (Node A gửi lại)
+//   14 -> mất 11, 12, 13 (lost += 3)   0 -> Node A khởi động lại
 SeqResult seq_on_packet(SeqTracker *t, uint32_t seq) {
+  // Gói đầu tiên từ lúc Node B bật: không tính mất các seq trước nó
   if (!t->has_prev) {
     t->has_prev = true;
     t->rx = 1;
     t->expected = seq + 1;
     return SEQ_NEW;
   }
+  // Trùng: bằng seq vừa nhận
   if (seq == t->expected - 1) {
     t->dup++;
     return SEQ_DUP;
   }
+  // Node A khởi động lại: seq lùi về -> đếm lại từ đầu, gói này vẫn dùng được
   if (seq < t->expected - 1) {
     t->rx = 1;
     t->lost = 0;
@@ -41,6 +45,7 @@ SeqResult seq_on_packet(SeqTracker *t, uint32_t seq) {
     t->expected = seq + 1;
     return SEQ_RESTART;
   }
+  // Nhảy cóc: các seq ở giữa bị mất
   if (seq > t->expected) {
     t->lost += seq - t->expected;
   }
@@ -56,6 +61,10 @@ float seq_loss_pct(const SeqTracker *t) {
   }
   return ((float) t->lost / (float) total) * 100;
 }
+
+// =====================================================================================
+// 2. Nhiệt độ trung bình 2 lần đo
+// =====================================================================================
 
 void temp_avg_init(TempAvg *a) {
   a->has_prev = false;
@@ -73,6 +82,11 @@ float temp_avg_push(TempAvg *a, float t) {
   return result;
 }
 
+// =====================================================================================
+// 3. Bộ ngưỡng
+// =====================================================================================
+
+// Cột "Mặc định" CONTRACT mục 7
 void thresholds_default(Thresholds *th) {
   th->fan_on_1 = 31.0f;
   th->fan_off_1 = 29.0f;
@@ -84,6 +98,7 @@ void thresholds_default(Thresholds *th) {
   th->manual_timeout_s = 1800;
 }
 
+// Mỗi dòng kiểm 1 ràng buộc; viết dạng !(đúng) để NaN (so sánh luôn false) cũng bị loại.
 bool thresholds_valid(const Thresholds *th) {
 
   if(!(th->fan_off_1 < th->fan_on_1)) return false;
@@ -97,7 +112,7 @@ bool thresholds_valid(const Thresholds *th) {
   return true;
 }
 
-// VIẾT SẴN: đọc 1 key là SỐ (29 hoặc 29.5 đều được). Thiếu key / chuỗi "29" / true -> false.
+// Đọc 1 key là SỐ (29 hoặc 29.5 đều được). Thiếu key / chuỗi "29" / true -> false.
 static bool read_number(JsonObjectConst o, const char *key, float *v) {
   JsonVariantConst x = o[key];
   if (x.isNull() || x.is<bool>() || !x.is<float>()) return false;
@@ -105,7 +120,7 @@ static bool read_number(JsonObjectConst o, const char *key, float *v) {
   return true;
 }
 
-// VIẾT SẴN: đọc 1 key số nguyên KHÔNG ÂM, tối đa maxv (600.0 cũng nhận, làm tròn thành 600).
+// Đọc 1 key số nguyên KHÔNG ÂM, tối đa maxv (600.0 cũng nhận, làm tròn thành 600).
 // Số âm -> false (nếu ép thẳng thì -1 thành 65535).
 static bool read_uint(JsonObjectConst o, const char *key, uint32_t maxv, uint32_t *v) {
   float f;
@@ -117,7 +132,7 @@ static bool read_uint(JsonObjectConst o, const char *key, uint32_t maxv, uint32_
 }
 
 bool config_parse(const char *json, size_t len, Thresholds *out) {
-  // VIẾT SẴN: parse. len vì payload MQTT không có '\0' cuối.
+  // Dùng len vì payload MQTT không có '\0' cuối.
   JsonDocument doc;
   if (deserializeJson(doc, json, len)) return false;   // JSON hỏng ("abc")
   if (!doc.is<JsonObjectConst>()) return false;        // không phải {...} ("[1,2]")
@@ -146,7 +161,10 @@ bool config_parse(const char *json, size_t len, Thresholds *out) {
   return true;
 }
 
-// VIẾT SẴN: CmdErr -> chuỗi "error" trong room1/cmd/resp.
+// =====================================================================================
+// 4. Lệnh room1/cmd
+// =====================================================================================
+
 const char *cmd_err_str(CmdErr e) {
   switch (e) {
     case CMD_BAD_JSON: return "bad_json";
@@ -157,7 +175,6 @@ const char *cmd_err_str(CmdErr e) {
   }
 }
 
-// VIẾT SẴN: LMode -> "auto" / "manual" / "offline".
 const char *lmode_str(LMode m) {
   switch (m) {
     case LMODE_AUTO: return "auto";
@@ -174,7 +191,7 @@ const char *lmode_str(LMode m) {
 //   abc                                             -> CMD_BAD_JSON
 // Kể cả khi lỗi, id và method_str vẫn phải được điền (để trả lời đúng người gửi).
 CmdErr cmd_parse(const char *json, size_t len, ParsedCmd *out) {
-  // VIẾT SẴN: xóa out, parse, lấy id.
+  // Xóa out, parse, lấy id
   memset(out, 0, sizeof(*out));
   out->method = M_UNKNOWN;
   JsonDocument doc;
@@ -185,7 +202,7 @@ CmdErr cmd_parse(const char *json, size_t len, ParsedCmd *out) {
     copy_str(out->id, sizeof(out->id), o["id"].as<const char *>());
   }
 
-  // VIẾT SẴN: lấy method.
+  // Lấy method, rồi kiểm params theo từng method
   if (!o["method"].is<const char *>()) return CMD_UNKNOWN_METHOD;  // thiếu hoặc không phải chuỗi
   const char *m = o["method"].as<const char *>();
   copy_str(out->method_str, sizeof(out->method_str), m);
@@ -225,6 +242,10 @@ CmdErr cmd_parse(const char *json, size_t len, ParsedCmd *out) {
   }
   return CMD_UNKNOWN_METHOD;  // tên method lạ ("reboot")
 }
+
+// =====================================================================================
+// 5. Luật điều khiển quạt/đèn
+// =====================================================================================
 
 void ctrl_init(CtrlLogic *c) {
   c->fan = 0;
@@ -293,13 +314,17 @@ bool ctrl_tick(CtrlLogic *c, bool presence_known, bool presence, uint32_t now_ms
   return false;             // Ca 3: không có gì đổi
 }
 
+// =====================================================================================
+// 6. Tạo JSON gửi đi
+// =====================================================================================
+
 size_t telemetry_build(const TelemetryIn *in, char *buf, size_t cap) {
-  JsonDocument doc;  // cách thêm key: doc["ten_key"] = gia_tri;
+  JsonDocument doc;
 
   if (in->has_ts) {
     doc["ts"] = in->ts_ms;
   }
-  if (in->node_a_online) {
+  if (in->node_a_online) {  // Node A mất thì bỏ hết key cảm biến
     doc["seq"] = in->seq;
     doc["temperature"] = round(in->temperature * 10.0) / 10.0;  // làm tròn 1 số lẻ: 30.54 -> 30.5
     doc["humidity"] = round(in->humidity * 10.0) / 10.0;
@@ -318,7 +343,7 @@ size_t telemetry_build(const TelemetryIn *in, char *buf, size_t cap) {
   doc["uptime_s"] = in->uptime_s;
   doc["mode"] = lmode_str(in->mode); 
 
-  // VIẾT SẴN: không đủ chỗ thì trả 0 (không gửi JSON bị cắt dở).
+  // Không đủ chỗ thì trả 0 (không gửi JSON bị cắt dở)
   if (measureJson(doc) + 1 > cap) return 0;
   return serializeJson(doc, buf, cap);
 }
@@ -343,6 +368,6 @@ size_t resp_build(const ParsedCmd *cmd, CmdErr err, uint8_t fan, bool light, LMo
   st["light_on"] = light;
   st["mode"] = lmode_str(mode);
 
-  if (measureJson(doc) + 1 > cap) return 0;  // VIẾT SẴN
+  if (measureJson(doc) + 1 > cap) return 0;  // không đủ chỗ
   return serializeJson(doc, buf, cap);
 }

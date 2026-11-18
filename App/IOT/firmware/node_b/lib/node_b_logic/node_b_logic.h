@@ -15,7 +15,7 @@
 // millis() tràn sau ~49,7 ngày.
 //
 // Nguồn: CONTRACT mục 3 (quy tắc nhận), 5 (telemetry), 6 (lệnh), 7 (ngưỡng), 13 (chế độ).
-// Toàn bộ file này do Claude viết cho #42 (không có code mẫu của thầy cho phần này).
+// Không có code mẫu của thầy cho phần này.
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -53,16 +53,16 @@ void seq_init(SeqTracker *t);
 // seq_on_packet: gọi cho MỖI PKT_DATA hợp lệ (đã qua kiểm len/magic/version).
 //   Vào : t = bộ đếm, seq = PktData.seq của gói vừa nhận.
 //   Ra  : SEQ_NEW / SEQ_DUP / SEQ_RESTART (xem enum).
-//   Làm : (1) Gói đầu tiên (has_prev = false): rx = 1, expected = seq + 1, SEQ_NEW.
-//             KHÔNG tính mất cho các seq < gói đầu (B có thể bật sau A).
-//         (2) seq == expected - 1: trùng -> dup++, SEQ_DUP, không đổi gì khác.
-//         (3) seq <  expected - 1: Node A khởi động lại -> rx = lost = dup = 0,
-//             a_resets++, rồi coi gói này là gói đầu (rx = 1), SEQ_RESTART.
-//         (4) seq >  expected: lost += seq - expected (mất các gói ở giữa).
-//         (5) Ngoài (2)(3): expected = seq + 1, rx++.
-//   Lưu ý: so sánh bằng phép trừ trên uint32_t KHÔNG an toàn ở đây (seq nhỏ hơn thì
-//   trừ ra số rất lớn). Hãy so sánh trực tiếp seq với expected - 1 và expected
-//   (expected >= 1 vì luôn = seq + 1 sau gói đầu).
+//   Các ca (ví dụ vừa nhận seq 10, tức expected = 11):
+//     Gói đầu tiên (has_prev = false): rx = 1, SEQ_NEW. Không tính mất các seq trước nó
+//                                      (Node B có thể bật sau Node A).
+//     seq = 10 (trùng)               : dup++, SEQ_DUP, không đổi gì khác.
+//     seq < 10 (Node A khởi động lại): rx = 1, lost = dup = 0, a_resets++, SEQ_RESTART.
+//     seq = 11 (bình thường)         : rx++, SEQ_NEW.
+//     seq = 14 (nhảy cóc)            : lost += 3 (mất 11, 12, 13), rx++, SEQ_NEW.
+//   Sau mọi ca trừ trùng: expected = seq + 1.
+//   Code so sánh trực tiếp seq với expected - 1 / expected, KHÔNG dùng hiệu seq - expected
+//   (uint32_t: seq nhỏ hơn thì hiệu ra số rất lớn).
 SeqResult seq_on_packet(SeqTracker *t, uint32_t seq);
 
 // seq_loss_pct: % gói mất = lost / (rx + lost) * 100. Chưa có gói nào thì 0.
@@ -108,7 +108,6 @@ typedef struct {
 
 // thresholds_default: điền giá trị cột "Mặc định" CONTRACT mục 7 (31/29/33/31,
 // 1500/2500, 600 s, 1800 s). Dùng khi NVS chưa có gì (board mới, lần đầu chạy).
-// (Viết sẵn trong .cpp.)
 void thresholds_default(Thresholds *th);
 
 // thresholds_valid: kiểm ràng buộc CONTRACT mục 7.
@@ -117,9 +116,7 @@ void thresholds_default(Thresholds *th);
 //       light_dark < light_bright, light_bright <= 4095 (ADC 12 bit)
 //       1 <= empty_timeout_s <= EMPTY_TIMEOUT_MAX_S
 //       manual_timeout_s >= 1
-//   Lưu ý: chuỗi so sánh kiểu toán học "a < b <= c < d" trong C++ KHÔNG viết liền được
-//   (a < b trả bool rồi so tiếp với c). Phải tách từng cặp nối bằng &&.
-//   Float NaN: mọi so sánh với NaN là false, nên chuỗi && ở trên tự loại NaN.
+//   Ngưỡng có NaN bị loại (mọi so sánh với NaN đều false).
 bool thresholds_valid(const Thresholds *th);
 
 // config_parse: đọc JSON của topic room1/config.
@@ -131,7 +128,7 @@ bool thresholds_valid(const Thresholds *th);
 //                 bộ cũ"). Gateway luôn gửi bộ đầy đủ, nên thiếu key là lỗi.
 //   Kiểu số: chấp nhận cả số nguyên lẫn số thực cho mọi key (Python có thể gửi 600.0).
 //            Key kiểu nguyên (light_*, *_timeout_s): làm tròn (lround) rồi mới kiểm.
-//            Số âm ở key nguyên: coi là sai (đừng ép kiểu thẳng sang uint, -1 thành 65535).
+//            Số âm ở key nguyên: coi là sai (ép thẳng sang uint thì -1 thành 65535).
 //            Chuỗi "31" KHÔNG nhận (CONTRACT mục 2: số phải là kiểu số JSON).
 bool config_parse(const char *json, size_t len, Thresholds *out);
 
@@ -192,10 +189,9 @@ typedef struct {
 CmdErr cmd_parse(const char *json, size_t len, ParsedCmd *out);
 
 // cmd_err_str: CmdErr -> chuỗi "error" trong room1/cmd/resp. CMD_OK -> NULL.
-// (Viết sẵn trong .cpp.)
 const char *cmd_err_str(CmdErr e);
 
-// lmode_str: LMode -> "auto" / "manual" / "offline". (Viết sẵn.)
+// lmode_str: LMode -> "auto" / "manual" / "offline".
 const char *lmode_str(LMode m);
 
 // =====================================================================================
@@ -234,8 +230,7 @@ CmdErr ctrl_set_light(CtrlLogic *c, bool on, bool is_rule, uint32_t now_ms);
 //   không đặt được; CONTRACT 6.2).
 CmdErr ctrl_set_mode(CtrlLogic *c, LMode m, uint32_t now_ms);
 
-// ctrl_tick: áp luật ưu tiên CONTRACT 13. Gọi định kỳ (main gọi ~200 ms/lần) và ngay
-// sau mỗi gói Node A.
+// ctrl_tick: áp luật ưu tiên CONTRACT 13. control_tick (control.cpp) gọi ~200 ms/lần.
 //   Vào : presence_known = có số liệu presence còn hiệu lực không (Node A đang online)
 //         presence       = có người (chỉ có nghĩa khi presence_known)
 //         now_ms, manual_timeout_ms = manual_timeout_s * 1000
@@ -255,7 +250,7 @@ bool ctrl_tick(CtrlLogic *c, bool presence_known, bool presence, uint32_t now_ms
 // =====================================================================================
 // 6. Tạo JSON gửi đi (CONTRACT mục 5 và 6.3)
 // =====================================================================================
-// Dữ liệu đầu vào của 1 bản telemetry. main.cpp gom từ control + espnow_rx + WiFi.
+// Dữ liệu đầu vào của 1 bản telemetry. net.cpp (publish_telemetry) gom từ control + WiFi.
 typedef struct {
   bool     has_ts;          // đã đồng bộ NTP chưa (chưa thì BỎ key ts)
   uint64_t ts_ms;           // epoch ms
@@ -283,9 +278,9 @@ typedef struct {
 //   Vào : in = dữ liệu, buf/cap = bộ đệm ra.
 //   Ra  : số byte đã ghi (không tính '\0'), 0 nếu bộ đệm không đủ.
 //   Quy tắc (CONTRACT mục 2, 5):
-//     - temperature, humidity: làm tròn 1 chữ số thập phân; anomaly_score: 3 chữ số.
-//       Mẹo: round(x * 10) / 10.0 rồi gán kiểu double cho ArduinoJson (float 30.1 mà
-//       gán thẳng có thể in ra 30.10000038).
+//     - temperature, humidity, espnow_loss: làm tròn 1 chữ số thập phân; anomaly_score: 3.
+//       Làm tròn bằng round(x * 10) / 10.0 (kiểu double): gán thẳng float 30.1 vào
+//       ArduinoJson có thể in ra 30.10000038.
 //     - bool gửi true/false (KHÔNG 0/1), mode là chuỗi.
 //     - Không bao giờ có null / NaN trong JSON.
 //     - Thứ tự key không quan trọng (Python đọc theo tên).

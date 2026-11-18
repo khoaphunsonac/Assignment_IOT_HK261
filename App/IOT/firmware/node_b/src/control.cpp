@@ -40,14 +40,14 @@ static Adafruit_NeoPixel s_rgb(RGB_COUNT, RGB_PIN, NEO_GRB + NEO_KHZ800);
 static uint8_t s_out_fan = 255;  // 255 = chưa xuất lần nào -> lần đầu chắc chắn ghi
 static int8_t s_out_light = -1;
 
-// ---------- VIẾT SẴN: khóa / mở khóa ----------
+// ---------- Khóa / mở khóa ----------
 // Mutex (không phải critical section) vì bên trong có gọi NeoPixel show() và ledcWrite;
 // critical section tắt ngắt + cấm đổi task, giữ lâu sẽ làm WiFi/ESP-NOW trễ.
 // portMAX_DELAY: chờ tới khi lấy được. Các đoạn giữ khóa đều rất ngắn (< 1 ms).
 static void lock() { xSemaphoreTake(s_mutex, portMAX_DELAY); }
 static void unlock() { xSemaphoreGive(s_mutex); }
 
-// ---------- VIẾT SẴN: xuất s_ctrl ra phần cứng ----------
+// ---------- Xuất s_ctrl ra phần cứng ----------
 // Gọi khi ĐANG giữ khóa (để 2 task không gọi show() chồng nhau).
 // Chỉ ghi phần nào khác với lần xuất trước.
 static void apply_outputs_locked() {
@@ -63,12 +63,12 @@ static void apply_outputs_locked() {
   }
 }
 
-// ---------- VIẾT SẴN: so trạng thái trước/sau để biết có đổi không ----------
+// ---------- So trạng thái trước/sau để biết có đổi không ----------
 static bool same_state(const CtrlLogic &a, const CtrlLogic &b) {
   return a.fan == b.fan && a.light == b.light && a.mode == b.mode;
 }
 
-// ---------- VIẾT SẴN: control_init ----------
+// ---------- control_init ----------
 // Thứ tự: mutex trước (các hàm sau đều dùng), rồi trạng thái logic, rồi phần cứng.
 // ledcSetup/ledcAttachPin là API core 2.x (espressif32@6.9.0); core 3.x đổi tên, KHÔNG dùng.
 void control_init() {
@@ -92,9 +92,10 @@ void control_init() {
 // control.h (CONTRACT mục 12) - webserver gọi
 // =====================================================================================
 
-// TODO 10: 3 hàm webserver gọi. Cả 3 cùng 1 khuôn 8 dòng, khác nhau đúng 1 dòng "điền".
-// Khuôn: khóa -> nhớ trạng thái cũ -> gọi hàm logic -> xuất ra quạt/đèn -> so cũ/mới -> mở khóa
-//        -> có đổi thì xin gửi telemetry -> trả true nếu lệnh thành công.
+// 3 hàm webserver gọi, cùng 1 khuôn:
+//   khóa -> nhớ trạng thái cũ -> gọi hàm logic -> xuất ra quạt/đèn -> so cũ/mới -> mở khóa
+//   -> có đổi thì xin gửi telemetry (sau unlock để giữ khóa ngắn) -> true nếu lệnh thành công.
+// Mode (control.h) và LMode (logic) cùng thứ tự nên đổi bằng static_cast.
 bool control_set_fan(uint8_t level, CmdSource src) {
   lock();
   CtrlLogic before = s_ctrl;
@@ -131,7 +132,7 @@ bool control_set_mode(Mode m) {
   return e == CMD_OK;
 }
 
-// VIẾT SẴN: trả bản sao trạng thái (copy trong khóa, dùng ngoài khóa).
+// Trả bản sao trạng thái (copy trong khóa, dùng ngoài khóa).
 ControlState control_get_state() {
   lock();
   ControlState st = {s_ctrl.fan, s_ctrl.light, static_cast<Mode>(s_ctrl.mode)};
@@ -139,7 +140,7 @@ ControlState control_get_state() {
   return st;
 }
 
-// VIẾT SẴN: số liệu cảm biến cho webserver. valid = false khi Node A mất / chưa có gói.
+// Số liệu cảm biến cho webserver. valid = false khi Node A mất / chưa có gói.
 SensorSnapshot control_get_sensors() {
   lock();
   SensorSnapshot s;
@@ -154,7 +155,6 @@ SensorSnapshot control_get_sensors() {
   return s;
 }
 
-// VIẾT SẴN
 const char *mode_to_str(Mode m) { return lmode_str(static_cast<LMode>(m)); }
 
 // =====================================================================================
@@ -177,7 +177,6 @@ void control_on_node_a(const PktData *d, float temp_avg, float loss_pct) {
   unlock();
 }
 
-// VIẾT SẴN
 NodeAData control_get_node_a() {
   lock();
   NodeAData n = s_node_a;
@@ -185,7 +184,6 @@ NodeAData control_get_node_a() {
   return n;
 }
 
-// VIẾT SẴN
 void control_get_lstate(uint8_t *fan, bool *light, LMode *mode) {
   lock();
   *fan = s_ctrl.fan;
@@ -194,6 +192,8 @@ void control_get_lstate(uint8_t *fan, bool *light, LMode *mode) {
   unlock();
 }
 
+// Gọi thẳng ctrl_* (không qua control_set_*) vì resp cần CmdErr cụ thể (bad_params /
+// ignored_not_auto), còn control_set_* chỉ trả bool.
 CmdErr control_apply_cmd(const ParsedCmd *c) {
   uint32_t now = millis();
   lock();

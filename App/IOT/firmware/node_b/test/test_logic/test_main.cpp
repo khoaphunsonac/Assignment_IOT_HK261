@@ -1,13 +1,11 @@
-// Testcase cho lib/node_b_logic (KHÔNG sửa file này khi làm bài; test sai thì báo Claude).
+// Testcase cho lib/node_b_logic (38 test).
 // Chạy trên PC:     pio test -e native     (cần gcc/g++ trong PATH, như #26)
 // Chạy trên board:  pio test -e yolo_uno   (cắm board, không cần gcc)
 //
-// Nhóm test theo TODO:
-//   1 seq_*          2 temp_avg_*      3 thresholds_valid   4 config_parse
-//   5 cmd_parse      6 ctrl_set_*      7 ctrl_tick          8 telemetry_build
-//   9 resp_build
-// Mẹo: chạy riêng 1 nhóm khi đang làm, vd `pio test -e native -v` rồi đọc dòng FAIL đầu
-// tiên. Unity in tên hàm test + số dòng của TEST_ASSERT bị sai.
+// Nhóm test (tên hàm test bắt đầu bằng):
+//   seq_   temp_avg_   thresholds_valid   config_parse   cmd_parse   ctrl_set_
+//   ctrl_tick   telemetry_build   resp_build
+// Test FAIL: Unity in tên hàm test + số dòng TEST_ASSERT bị sai (`pio test -e native -v`).
 #include <unity.h>
 #include <math.h>
 #include <string.h>

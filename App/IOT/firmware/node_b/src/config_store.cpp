@@ -10,7 +10,7 @@
 static SemaphoreHandle_t s_mutex;
 static Thresholds s_th;
 
-// VIẾT SẴN: in bộ ngưỡng 1 dòng (minh chứng PR: đổi ngưỡng trên dashboard -> thấy dòng này).
+// In bộ ngưỡng 1 dòng (minh chứng PR: đổi ngưỡng trên dashboard -> thấy dòng này).
 static void print_th(const char *prefix, const Thresholds *th) {
   Serial.printf("%s fan_on_1=%.1f fan_off_1=%.1f fan_on_2=%.1f fan_off_2=%.1f "
                 "light_dark=%u light_bright=%u empty=%lus manual=%lus\n",
@@ -19,7 +19,6 @@ static void print_th(const char *prefix, const Thresholds *th) {
                 (unsigned long)th->manual_timeout_s);
 }
 
-// VIẾT SẴN
 Thresholds config_store_get() {
   xSemaphoreTake(s_mutex, portMAX_DELAY);
   Thresholds th = s_th;
@@ -29,16 +28,16 @@ Thresholds config_store_get() {
 
 void config_store_init() {
   s_mutex = xSemaphoreCreateMutex();
-  // TODO 18: đọc bộ ngưỡng đã lưu trong NVS lúc khởi động.
   Thresholds th;
   size_t n = 0;  // số byte đọc được, 0 = NVS chưa có gì
   Preferences p;
   p.begin(NVS_NAMESPACE, true);  // true = chỉ đọc
-  // điền: n = p.getBytes(NVS_KEY_TH, &th, sizeof(th));
+  n = p.getBytes(NVS_KEY_TH, &th, sizeof(th));
   p.end();
 
-  if (n == sizeof(th) /* điền: && thresholds_valid(&th) */) {
-    // điền: s_th = th; print_th("[CFG] NVS:", &s_th);
+  if (n == sizeof(th) && thresholds_valid(&th)) {
+    s_th = th; 
+    print_th("[CFG] NVS:", &s_th);
   } else {
     // NVS trống (board mới) hoặc dữ liệu hỏng -> mặc định
     thresholds_default(&s_th);
@@ -46,14 +45,15 @@ void config_store_init() {
   }
 }
 
+// Log mẫu:
+//   bộ mới                              -> [CFG] Moi: fan_on_1=31.0 ... empty=60s manual=120s
+//   nối lại MQTT, broker gửi lại bản cũ -> [CFG] Khong doi   (không ghi flash)
+// Ghi flash NGOÀI khóa (putBytes chậm), chỉ giữ khóa lúc gán s_th.
 bool config_store_apply_json(const char *payload, size_t len) {
-  // TODO 19: tin room1/config mới tới. Ví dụ log:
-  //   lần đầu  -> [CFG] Moi: fan_on_1=31.0 ... empty=60s manual=120s
-  //   nối lại MQTT, broker gửi lại bản cũ -> [CFG] Khong doi   (không ghi flash)
   Thresholds cu = config_store_get();  // bộ đang dùng
   Thresholds th = cu;                  // config_parse ghi bộ mới vào đây
 
-  if (true /* điền: thay bằng !config_parse(payload, len, &th) */) {
+  if (!config_parse(payload, len, &th)) {
     Serial.println("[CFG] room1/config sai, giu bo cu");
     return false;
   }
@@ -61,13 +61,15 @@ bool config_store_apply_json(const char *payload, size_t len) {
     Serial.println("[CFG] Khong doi");
     return true;
   }
-  // điền: xSemaphoreTake(s_mutex, portMAX_DELAY); s_th = th; xSemaphoreGive(s_mutex);
-  // điền: ghi NVS (giống TODO 18 nhưng begin(..., false) và putBytes thay getBytes):
-  //       Preferences p; p.begin(NVS_NAMESPACE, false); p.putBytes(NVS_KEY_TH, &th, sizeof(th)); p.end();
+  xSemaphoreTake(s_mutex, portMAX_DELAY); 
+  s_th = th; 
+  xSemaphoreGive(s_mutex);
+  Preferences p;
+  p.begin(NVS_NAMESPACE, false);
+  p.putBytes(NVS_KEY_TH, &th, sizeof(th));
+  p.end();
   print_th("[CFG] Moi:", &th);
-  // #43: gui PKT_CONFIG xuong Node A khi empty_timeout_s doi
-  (void)payload;
-  (void)len;  // xóa 2 dòng này
+  // TODO(#43): gửi PKT_CONFIG xuống Node A khi empty_timeout_s đổi
   return true;
 }
 

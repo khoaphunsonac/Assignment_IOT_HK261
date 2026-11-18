@@ -24,29 +24,22 @@
 void task_control(void *pvParameters) {
   (void)pvParameters;
   while (1) {
-    // TODO 21: 200 ms/lần áp luật theo thời gian. Ví dụ log khi phòng trống:
-    //   [CTRL] fan=0 light=0 mode=auto node_a_online=1
     Thresholds th = config_store_get();
     bool changed = false;
-    // điền: changed = control_tick(th.manual_timeout_s * 1000UL);   (giây -> mili giây)
+    changed = control_tick(th.manual_timeout_s * 1000UL);
     if (changed) {
       net_request_telemetry();
       uint8_t f;
       bool l;
       LMode m;
       control_get_lstate(&f, &l, &m);
-      // điền: Serial.printf("[CTRL] fan=%u light=%d mode=%s node_a_online=%d\n",
-      //                     f, l, lmode_str(m), control_get_node_a().online);
-      (void)f;
-      (void)l;
-      (void)m;  // xóa 3 dòng này
+      Serial.printf("[CTRL] fan=%u light=%d mode=%s node_a_online=%d\n", f, l, lmode_str(m), control_get_node_a().online);
     }
-    (void)th;  // xóa dòng này
     vTaskDelay(CONTROL_PERIOD_MS);
   }
 }
 
-// VIẾT SẴN: thứ tự khởi động.
+// Thứ tự khởi động:
 //   1. Serial + chờ USB CDC (2 s, như Node A).
 //   2. config_store_init: có ngưỡng (NVS hoặc mặc định) TRƯỚC khi luật chạy.
 //   3. control_init: mutex + quạt/đèn tắt hết.

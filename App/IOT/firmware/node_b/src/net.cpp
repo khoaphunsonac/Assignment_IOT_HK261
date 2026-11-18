@@ -31,7 +31,6 @@ static PubSubClient s_mqtt(s_wifi_client);
 static volatile bool s_tel_req = false;     // cờ "xin gửi telemetry"
 static volatile bool s_gw_online = false;
 
-// ---------- VIẾT SẴN ----------
 void net_request_telemetry() { s_tel_req = true; }
 bool net_gateway_online() { return s_gw_online; }
 
@@ -40,7 +39,7 @@ bool net_publish(const char *topic, const char *payload, bool retained) {
   return s_mqtt.publish(topic, payload, retained);
 }
 
-// VIẾT SẴN: giờ NTP dạng epoch ms. Ra false nếu chưa đồng bộ (đồng hồ còn ở năm 1970).
+// Giờ NTP dạng epoch ms. Ra false nếu chưa đồng bộ (đồng hồ còn ở năm 1970).
 // 1700000000 s = 11/2023: nhỏ hơn mốc này chắc chắn là chưa có NTP.
 static bool now_epoch_ms(uint64_t *ms) {
   struct timeval tv;
@@ -56,26 +55,23 @@ static bool now_epoch_ms(uint64_t *ms) {
 //   Vào : topic = chuỗi C có '\0'; payload/length = nội dung, KHÔNG có '\0' cuối
 //         (đừng dùng strlen hay printf("%s") trên payload).
 static void on_message(char *topic, uint8_t *payload, unsigned int length) {
-  // TODO 14: tin MQTT tới -> chuyển cho đúng nơi xử lý.
-  //   payload KHÔNG có '\0' ở cuối: luôn dùng kèm length, đừng printf("%s", payload).
   if (strcmp(topic, T_CMD) == 0) {
     cmd_handle((const char *)payload, length);
   } else if (strcmp(topic, T_CONFIG) == 0) {
-    // điền: config_store_apply_json((const char *)payload, length);
+    config_store_apply_json((const char *)payload, length);
   } else if (strcmp(topic, T_GW_STATUS) == 0) {
     // payload ví dụ: {"state":"online"} hoặc {"state":"offline"}
     char buf[64];
     size_t n = length < sizeof(buf) - 1 ? length : sizeof(buf) - 1;  // dài quá thì cắt
     memcpy(buf, payload, n);
     buf[n] = '\0';  // thêm '\0' để dùng strstr được
-    bool on = false;
-    // điền: on = strstr(buf, "\"online\"") != NULL;
+    bool on = strstr(buf, "\"online\"") != NULL;
     if (on != s_gw_online) Serial.printf("[MQTT] gateway %s\n", on ? "online" : "offline");
     s_gw_online = on;
   }
 }
 
-// VIẾT SẴN: publish room1/status online (retained), CONTRACT 8:
+// Publish room1/status online (retained), CONTRACT 8:
 //   {"state":"online","fw_version":"1.0.0","ip":"10.199.40.70"}
 static void publish_online() {
   char buf[128];
@@ -84,25 +80,25 @@ static void publish_online() {
   net_publish(T_STATUS, buf, true);
 }
 
+// Nối broker (kèm Last Will), subscribe 3 topic, báo online, xin gửi 1 bản telemetry.
 static bool mqtt_connect() {
-  // TODO 15: nối broker, đăng ký topic, báo online.
   // Last Will: nhờ broker "nhắn hộ" {"state":"offline"} lên room1/status nếu Node B rớt
   // (rút điện, mất WiFi) mà không kịp nói gì. Các tham số: client id, topic, QoS, retained, nội dung.
-  bool ok = false;
-  // điền: ok = s_mqtt.connect(MQTT_CLIENT_ID, T_STATUS, 1, true, LWT_OFFLINE);
+  bool ok = s_mqtt.connect(MQTT_CLIENT_ID, T_STATUS, 1, true, LWT_OFFLINE);
   if (!ok) {
     Serial.printf("FAIL rc=%d\n", s_mqtt.state());
     return false;
   }
   s_mqtt.subscribe(T_CMD, 1);
-  // điền: subscribe T_CONFIG và T_GW_STATUS (QoS 1, giống dòng trên)
+  s_mqtt.subscribe(T_CONFIG, 1);
+  s_mqtt.subscribe(T_GW_STATUS, 1);
   publish_online();         // room1/status online (retained)
   net_request_telemetry();  // gửi ngay 1 bản telemetry
   Serial.println("OK");
   return true;
 }
 
-// VIẾT SẴN: watchdog WiFi (giống task_status của espnow_rx_test / lab 10/11 B8).
+// Watchdog WiFi (giống task_status của espnow_rx_test / lab 10/11 B8).
 // setAutoReconnect(true) KHÔNG đủ: lab 10/11 tắt hotspot 30 s rồi bật lại, core không tự
 // vào lại. Nên mất > 10 s thì tự gọi WiFi.disconnect() + WiFi.begin().
 static void wifi_watchdog() {
@@ -128,7 +124,6 @@ static void wifi_watchdog() {
 static void publish_telemetry() {
   TelemetryIn in;
   memset(&in, 0, sizeof(in));
-  // TODO 16: gom dữ liệu từ 3 nơi vào "in".
   // (1) Giờ NTP
   in.has_ts = now_epoch_ms(&in.ts_ms);
   // (2) Số liệu Node A
@@ -136,11 +131,19 @@ static void publish_telemetry() {
   in.node_a_online = a.online;
   in.seq = a.seq;
   in.temperature = a.temperature;
-  // điền: humidity, light, presence, anomaly, anomaly_score, dht_fail, espnow_loss (in.x = a.x)
-  // (3) Trạng thái Node B
+  in.humidity = a.humidity;
+  in.light = a.light;
+  in.presence = a.presence;
+  in.anomaly = a.anomaly;
+  in.anomaly_score = a.anomaly_score;
+  in.dht_fail = a.dht_fail;
+  in.espnow_loss = a.espnow_loss;
+  // (3) Trạng thái Node B (quạt/đèn/mode lấy qua control, có khóa)
   control_get_lstate(&in.fan_level, &in.light_on, &in.mode);
-  // điền: in.rssi = WiFi.RSSI();  in.fw_version = FW_VERSION;  in.uptime_s = millis() / 1000;
-  // Phần dưới VIẾT SẴN: tạo JSON, publish, in lỗi nếu có.
+  in.rssi = WiFi.RSSI();  
+  in.fw_version = FW_VERSION;  
+  in.uptime_s = millis() / 1000;
+  // (4) Tạo JSON và publish
   char buf[TELEMETRY_BUF];
   size_t n = telemetry_build(&in, buf, sizeof(buf));
   if (n == 0) {
@@ -150,7 +153,7 @@ static void publish_telemetry() {
   if (!net_publish(T_TELEMETRY, buf, false)) Serial.println("[MQTT] LOI publish telemetry");
 }
 
-// VIẾT SẴN: net_init (gọi trong setup).
+// net_init (gọi trong setup).
 void net_init() {
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);  // không ngủ modem: vừa STA vừa ESP-NOW, ngủ thì rớt gói ESP-NOW
@@ -176,7 +179,7 @@ void net_init() {
   s_mqtt.setCallback(on_message);
 }
 
-// VIẾT SẴN: vòng lặp mạng. Thứ tự mỗi vòng (~10 ms):
+// Vòng lặp mạng. Thứ tự mỗi vòng (~10 ms):
 //   (1) watchdog WiFi; mất WiFi thì chưa làm gì thêm.
 //   (2) MQTT chưa nối -> thử nối, hụt thì 5 s sau thử lại (không chặn vòng lặp).
 //   (3) s_mqtt.loop(): nhận tin (gọi on_message), giữ kết nối (keepalive).

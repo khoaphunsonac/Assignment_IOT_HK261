@@ -30,7 +30,7 @@ static SeqTracker s_seq;
 static TempAvg s_tavg;
 static uint32_t s_pairs = 0;
 
-// ---------- VIẾT SẴN: callback nhận (chép từ espnow_rx_test) ----------
+// ---------- Callback nhận (chép từ espnow_rx_test) ----------
 // Chạy trong task WiFi của hệ thống: phải ngắn, không printf, không chờ.
 // CONTRACT 3: chỉ kiểm len, magic, version rồi đẩy queue. Gói lạ (thiết bị khác trong
 // phòng lab cũng dùng ESP-NOW) bị loại ở bước magic.
@@ -54,7 +54,7 @@ static void on_recv(const uint8_t *mac, const uint8_t *data, int len) {
   if (xQueueSend(s_rx_queue, &it, 0) != pdTRUE) s_queue_full++;  // đầy thì bỏ, không chờ
 }
 
-// ---------- VIẾT SẴN: trả lời ghép cặp (chép từ espnow_rx_test) ----------
+// ---------- Trả lời ghép cặp (chép từ espnow_rx_test) ----------
 // Node A broadcast PKT_PAIR_REQ. Node B thêm MAC Node A làm peer (nếu chưa có) để gửi
 // unicast được, rồi trả PKT_PAIR_RESP kèm channel WiFi hiện tại (= channel hotspot).
 // p.channel = 0: dùng channel hiện tại của radio (tránh lệch khi hotspot đổi channel).
@@ -87,8 +87,10 @@ static void handle_pair_req(const RxItem &it) {
   // #43 (sau): gửi PKT_CONFIG (empty_timeout_s) ngay sau khi ghép cặp.
 }
 
+// ---------- Xử lý 1 gói PKT_DATA ----------
+// Bỏ gói trùng -> Node A khởi động lại thì tính lại nhiệt độ TB -> cập nhật control
+// -> xin gửi telemetry -> nháy LED, in 1 dòng log.
 static void handle_data(const RxItem &it) {
-  // TODO 20: xử lý 1 gói số đo từ Node A.
   if (it.len != sizeof(PktData)) {  // sai kích thước -> bỏ
     s_bad_pkt++;
     return;
@@ -96,26 +98,24 @@ static void handle_data(const RxItem &it) {
   PktData d;
   memcpy(&d, it.data, sizeof(d));  // memcpy vì it.data không căn lề cho float
 
-  SeqResult r = SEQ_NEW;
-  // điền: r = seq_on_packet(&s_seq, d.seq);
+  SeqResult r = seq_on_packet(&s_seq, d.seq);
   if (r == SEQ_DUP) {
     return;  // gói gửi lại, đã xử lý lần trước
   }
   if (r == SEQ_RESTART) {
-    // điền: temp_avg_init(&s_tavg);   (Node A khởi động lại: quên nhiệt độ cũ)
+    temp_avg_init(&s_tavg);
     Serial.println("[B] Node A vua khoi dong lai, dem lai");
   }
-  float t = d.temperature;
-  // điền: t = temp_avg_push(&s_tavg, d.temperature);
-  // điền: control_on_node_a(&d, t, seq_loss_pct(&s_seq));
-  // điền: net_request_telemetry();       (CONTRACT 5: mỗi gói gửi 1 bản telemetry)
+  float t = temp_avg_push(&s_tavg, d.temperature);
+  control_on_node_a(&d, t, seq_loss_pct(&s_seq));
+  net_request_telemetry();
   digitalWrite(LED_PIN, !digitalRead(LED_PIN));  // nháy LED mỗi gói
   Serial.printf("[B] seq=%lu T=%.1f(avg %.1f) H=%.1f light=%u presence=%u anomaly=%u score=%.3f dht_fail=%u\n",
                 (unsigned long)d.seq, d.temperature, t, d.humidity, d.light, d.presence,
                 d.anomaly, d.anomaly_score, d.dht_fail);
 }
 
-// VIẾT SẴN: dòng thống kê 10 s, cùng dạng espnow_rx_test để so với lab 13/11.
+// Dòng thống kê 10 s, cùng dạng espnow_rx_test để so với lab 13/11.
 static void print_stats() {
   Serial.printf("[B] === ESPNOW nhan=%lu mat=%lu trung=%lu loss=%.2f%% | ghep_cap=%lu A_reset=%lu "
                 "bad=%lu qfull=%lu | WiFi ch=%d\n",
@@ -124,7 +124,6 @@ static void print_stats() {
                 (unsigned long)s_bad_pkt, (unsigned long)s_queue_full, WiFi.channel());
 }
 
-// VIẾT SẴN
 bool espnow_rx_init() {
   pinMode(LED_PIN, OUTPUT);
   seq_init(&s_seq);
@@ -136,7 +135,7 @@ bool espnow_rx_init() {
   return true;
 }
 
-// VIẾT SẴN: chờ gói tối đa 1 s (để vẫn in được thống kê khi không có gói), phân loại.
+// Chờ gói tối đa 1 s (để vẫn in được thống kê khi không có gói), phân loại.
 void task_espnow(void *pvParameters) {
   (void)pvParameters;
   RxItem it;
