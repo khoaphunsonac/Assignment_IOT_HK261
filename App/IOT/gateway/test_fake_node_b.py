@@ -2,8 +2,11 @@
 test_fake_node_b.py - Kiem thu tu dong cac yeu cau CONTRACT va 5 ca test trong TASKS_W1.md
 """
 
+import hashlib
+import io
 import json
 import unittest
+from unittest.mock import MagicMock, patch
 from fake_node_b import (
     handle_cmd,
     make_telemetry,
@@ -12,6 +15,10 @@ from fake_node_b import (
     state_lock,
     config,
     get_state,
+    get_fw_version,
+    set_fw_version,
+    process_ota,
+    is_rebooting,
 )
 
 
@@ -138,6 +145,200 @@ class TestFakeNodeB(unittest.TestCase):
         self.assertEqual(telem["humidity"], round(telem["humidity"], 1))
         # anomaly_score co toi da 3 chu so thap phan
         self.assertEqual(telem["anomaly_score"], round(telem["anomaly_score"], 3))
+
+    def test_telemetry_node_a_offline(self):
+        """Kiem tra telemetry khi mat Node A: chi co key cua Node B, khong co key cam bien (CONTRACT muc 5)."""
+        telem = make_telemetry(override_node_a_online=False)
+
+        # Bat buoc phai co node_a_online: False
+        self.assertFalse(telem["node_a_online"])
+
+        # Cac key bat buoc cua Node B
+        expected_node_b_keys = ["ts", "node_a_online", "fan_level", "light_on", "mode", "rssi", "fw_version", "uptime_s"]
+        for k in expected_node_b_keys:
+            self.assertIn(k, telem, f"Thieu key Node B: {k}")
+
+        # Khong duoc chua bat ky key cam bien nao cua Node A
+        sensor_keys = ["temperature", "humidity", "light", "presence", "anomaly", "anomaly_score", "seq", "dht_fail", "espnow_loss"]
+        for k in sensor_keys:
+            self.assertNotIn(k, telem, f"Telemetry mat Node A khong duoc chua key cam bien: {k}")
+
+    def test_ota_same_version_ignored(self):
+        """Kiem tra OTA: Neu phien ban trung voi ban hien tai thi bo qua."""
+        set_fw_version("1.0.0")
+        client = MagicMock()
+        published = []
+        client.publish = lambda topic, payload, qos=0, retain=False: published.append((topic, json.loads(payload)))
+
+        res = process_ota(client, {"version": "1.0.0", "url": "http://localhost/test.bin"})
+        self.assertFalse(res)
+        self.assertEqual(len(published), 0)
+
+    def test_ota_download_failed(self):
+        """Kiem tra OTA: Loi tai file -> state failed, error download_failed."""
+        set_fw_version("1.0.0")
+        client = MagicMock()
+        published = []
+        client.publish = lambda topic, payload, qos=0, retain=False: published.append((topic, json.loads(payload)))
+
+        res = process_ota(client, {"version": "1.0.1", "url": "http://127.0.0.1:54321/not_found.bin"})
+        self.assertFalse(res)
+
+        # Phai co tin status failed voi download_failed
+        failed_msgs = [p for t, p in published if t == "room1/ota/status" and p.get("state") == "failed"]
+        self.assertTrue(len(failed_msgs) > 0)
+        self.assertEqual(failed_msgs[0]["error"], "download_failed")
+
+    def test_ota_checksum_mismatch(self):
+        """Kiem tra OTA: Sai sha256 -> state failed, error checksum_mismatch."""
+        set_fw_version("1.0.0")
+        client = MagicMock()
+        published = []
+        client.publish = lambda topic, payload, qos=0, retain=False: published.append((topic, json.loads(payload)))
+
+        fake_resp = MagicMock()
+        fake_resp.read.side_effect = [b"mock firmware binary", b""]
+        fake_resp.headers = {"Content-Length": "20"}
+        fake_resp.__enter__.return_value = fake_resp
+        fake_resp.__exit__.return_value = False
+
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            res = process_ota(client, {
+                "version": "1.0.1",
+                "url": "http://localhost/fw.bin",
+                "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            })
+            self.assertFalse(res)
+
+        failed_msgs = [p for t, p in published if t == "room1/ota/status" and p.get("state") == "failed"]
+        self.assertTrue(len(failed_msgs) > 0)
+        self.assertEqual(failed_msgs[0]["error"], "checksum_mismatch")
+
+    def test_ota_corrupt_flag(self):
+        """Kiem tra OTA: Tham so corrupt=True lam sai sha256 -> checksum_mismatch."""
+        set_fw_version("1.0.0")
+        client = MagicMock()
+        published = []
+        client.publish = lambda topic, payload, qos=0, retain=False: published.append((topic, json.loads(payload)))
+
+        content = b"correct firmware binary"
+        real_sha256 = hashlib.sha256(content).hexdigest()
+
+        fake_resp = MagicMock()
+        fake_resp.read.side_effect = [content, b""]
+        fake_resp.headers = {"Content-Length": str(len(content))}
+        fake_resp.__enter__.return_value = fake_resp
+        fake_resp.__exit__.return_value = False
+
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            res = process_ota(client, {
+                "version": "1.0.1",
+                "url": "http://localhost/fw.bin",
+                "sha256": real_sha256
+            }, corrupt=True)
+            self.assertFalse(res)
+
+        failed_msgs = [p for t, p in published if t == "room1/ota/status" and p.get("state") == "failed"]
+        self.assertTrue(len(failed_msgs) > 0)
+        self.assertEqual(failed_msgs[0]["error"], "checksum_mismatch")
+
+    def test_ota_success_flow(self):
+        """Kiem tra OTA thanh cong: downloading -> verifying -> rebooting -> success, cap nhat fw_version."""
+        set_fw_version("1.0.0")
+        client = MagicMock()
+        published = []
+        client.publish = lambda topic, payload, qos=0, retain=False: published.append((topic, json.loads(payload)))
+
+        content = b"valid new firmware binary data"
+        real_sha256 = hashlib.sha256(content).hexdigest()
+
+        fake_resp = MagicMock()
+        fake_resp.read.side_effect = [content, b""]
+        fake_resp.headers = {"Content-Length": str(len(content))}
+        fake_resp.__enter__.return_value = fake_resp
+        fake_resp.__exit__.return_value = False
+
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            res = process_ota(
+                client,
+                {"version": "1.0.1", "url": "http://localhost/fw.bin", "sha256": real_sha256},
+                corrupt=False,
+                sleep_fn=lambda s: None
+            )
+            self.assertTrue(res)
+
+        # Kiem tra cac trang thai duoc publish
+        ota_statuses = [p["state"] for t, p in published if t == "room1/ota/status"]
+        self.assertIn("downloading", ota_statuses)
+        self.assertIn("verifying", ota_statuses)
+        self.assertIn("rebooting", ota_statuses)
+        self.assertIn("success", ota_statuses)
+
+        # Kiem tra fw_version moi
+        self.assertEqual(get_fw_version(), "1.0.1")
+
+        # Kiem tra da publish retained room1/status online voi ban 1.0.1
+        status_msgs = [p for t, p in published if t == "room1/status" and p.get("state") == "online"]
+        self.assertTrue(len(status_msgs) > 0)
+        self.assertEqual(status_msgs[-1]["fw_version"], "1.0.1")
+
+    def test_ota_missing_sha256(self):
+        """Kiem tra OTA: Thieu sha256 -> state failed, error checksum_mismatch."""
+        set_fw_version("1.0.0")
+        client = MagicMock()
+        published = []
+        client.publish = lambda topic, payload, qos=0, retain=False: published.append((topic, json.loads(payload)))
+
+        content = b"valid firmware binary data"
+        fake_resp = MagicMock()
+        fake_resp.read.side_effect = [content, b""]
+        fake_resp.headers = {"Content-Length": str(len(content))}
+        fake_resp.__enter__.return_value = fake_resp
+        fake_resp.__exit__.return_value = False
+
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            # Khong gui sha256
+            res = process_ota(client, {
+                "version": "1.0.1",
+                "url": "http://localhost/fw.bin"
+            })
+            self.assertFalse(res)
+
+        failed_msgs = [p for t, p in published if t == "room1/ota/status" and p.get("state") == "failed"]
+        self.assertTrue(len(failed_msgs) > 0)
+        self.assertEqual(failed_msgs[0]["error"], "checksum_mismatch")
+
+    def test_ota_rebooting_event(self):
+        """Kiem tra co is_rebooting duoc set trong luc reboot va clear sau khi xong."""
+        set_fw_version("1.0.0")
+        client = MagicMock()
+        content = b"valid firmware binary data"
+        real_sha256 = hashlib.sha256(content).hexdigest()
+
+        fake_resp = MagicMock()
+        fake_resp.read.side_effect = [content, b""]
+        fake_resp.headers = {"Content-Length": str(len(content))}
+        fake_resp.__enter__.return_value = fake_resp
+        fake_resp.__exit__.return_value = False
+
+        was_rebooting_set = False
+
+        def mock_sleep(duration):
+            nonlocal was_rebooting_set
+            was_rebooting_set = is_rebooting.is_set()
+
+        self.assertFalse(is_rebooting.is_set())
+
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            res = process_ota(
+                client,
+                {"version": "1.0.1", "url": "http://localhost/fw.bin", "sha256": real_sha256},
+                sleep_fn=mock_sleep
+            )
+            self.assertTrue(res)
+
+        self.assertTrue(was_rebooting_set, "is_rebooting phai duoc set trong luc sleep_fn goi")
+        self.assertFalse(is_rebooting.is_set(), "is_rebooting phai duoc clear sau khi OTA xong")
 
 
 if __name__ == "__main__":

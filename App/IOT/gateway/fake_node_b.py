@@ -5,6 +5,8 @@ Khớp 100% tài liệu CONTRACT.md (mục 4–9, 13).
 Tác giả: Tuấn (TV2 - Gateway)
 """
 
+import argparse
+import hashlib
 import json
 import logging
 import os
@@ -12,6 +14,7 @@ import random
 import sys
 import threading
 import time
+import urllib.request
 from typing import Any, Dict, Optional
 
 import paho.mqtt.client as mqtt
@@ -57,6 +60,30 @@ temp_history = [29.5, 30.0]  # Lưu 2 lần đo gần nhất để tính trung b
 presence_state = True
 presence_toggle_counter = 0
 
+# Biến cấu hình chế độ mất Node A và OTA
+fw_version = "1.0.0"
+fw_version_lock = threading.Lock()
+node_a_off_after: Optional[int] = None
+ota_corrupt: bool = False
+is_rebooting = threading.Event()
+
+
+def get_fw_version() -> str:
+    with fw_version_lock:
+        return fw_version
+
+
+def set_fw_version(ver: str):
+    global fw_version
+    with fw_version_lock:
+        fw_version = ver
+
+
+def is_node_a_online() -> bool:
+    if node_a_off_after is None:
+        return True
+    return (time.time() - start_time) < node_a_off_after
+
 
 def get_state() -> Dict[str, Any]:
     """Lấy bản sao trạng thái hiện tại (luôn có đủ 3 key)."""
@@ -68,13 +95,37 @@ def get_state() -> Dict[str, Any]:
         }
 
 
-def make_telemetry() -> Dict[str, Any]:
+def make_telemetry(override_node_a_online: Optional[bool] = None) -> Dict[str, Any]:
     """Tạo gói telemetry đúng CONTRACT mục 5."""
     global seq, temp_history, presence_state, presence_toggle_counter
 
-    seq += 1
     now_ms = int(time.time() * 1000)
     uptime_s = int(time.time() - start_time)
+    current_fw = get_fw_version()
+
+    node_a_is_up = is_node_a_online() if override_node_a_online is None else override_node_a_online
+
+    with state_lock:
+        curr_state = {
+            "fan_level": state["fan_level"],
+            "light_on": state["light_on"],
+            "mode": state["mode"],
+        }
+
+    # CONTRACT mục 5: "Khi mất Node A (node_a_online = false): vẫn gửi 5 giây một lần, bỏ các key cảm biến"
+    if not node_a_is_up:
+        return {
+            "ts": now_ms,
+            "node_a_online": False,
+            "fan_level": curr_state["fan_level"],
+            "light_on": curr_state["light_on"],
+            "mode": curr_state["mode"],
+            "rssi": random.randint(-55, -45),
+            "fw_version": current_fw,
+            "uptime_s": uptime_s,
+        }
+
+    seq += 1
 
     # 1. Mô phỏng cảm biến Node A:
     # Nhiệt độ dao động quanh 27 - 34°C
@@ -108,12 +159,11 @@ def make_telemetry() -> Dict[str, Any]:
             state["fan_level"] = 0
             state["light_on"] = False
             state["mode"] = "auto"
-
-        curr_state = {
-            "fan_level": state["fan_level"],
-            "light_on": state["light_on"],
-            "mode": state["mode"],
-        }
+            curr_state = {
+                "fan_level": state["fan_level"],
+                "light_on": state["light_on"],
+                "mode": state["mode"],
+            }
 
     # Anomaly / TinyML mô phỏng
     anomaly = False
@@ -138,7 +188,7 @@ def make_telemetry() -> Dict[str, Any]:
         "light_on": curr_state["light_on"],
         "mode": curr_state["mode"],
         "rssi": random.randint(-55, -45),
-        "fw_version": "1.0.0",
+        "fw_version": current_fw,
         "uptime_s": uptime_s,
     }
     return telemetry
@@ -350,6 +400,111 @@ def handle_config(payload: Dict[str, Any]):
     logger.info("Cap nhat bo nguong room1/config thanh cong: %s", config)
 
 
+def process_ota(client: mqtt.Client, ota_data: Dict[str, Any], corrupt: bool = False, sleep_fn=time.sleep) -> bool:
+    """
+    Xử lý cập nhật OTA cho Node B giả lập (CONTRACT mục 9).
+    Chạy trong thread riêng để không chặn thread mạng của MQTT client.
+    """
+    version = ota_data.get("version")
+    url = ota_data.get("url")
+    expected_sha256 = (ota_data.get("sha256") or "").strip().lower()
+    expected_size = ota_data.get("size", 0)
+
+    if not version or not url:
+        logger.warning("OTA: Thiếu version hoặc url trong bản tin: %s", ota_data)
+        return False
+
+    current_ver = get_fw_version()
+    if version == current_ver:
+        logger.info("OTA: Version %s bằng fw_version hiện tại (%s). Bỏ qua.", version, current_ver)
+        return False
+
+    logger.info("OTA: Bắt đầu tải firmware version %s từ %s...", version, url)
+
+    # 1. Báo downloading 0%
+    client.publish("room1/ota/status", json.dumps({"version": version, "state": "downloading", "progress": 0}), qos=0)
+
+    # 2. Tải file và tính sha256
+    hasher = hashlib.sha256()
+    downloaded_len = 0
+    last_reported_p = 0
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "FakeNodeB-OTA/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            total_size = int(resp.headers.get("Content-Length") or expected_size or 0)
+            while True:
+                chunk = resp.read(4096)
+                if not chunk:
+                    break
+                downloaded_len += len(chunk)
+                hasher.update(chunk)
+                if total_size > 0:
+                    progress = min(100, int((downloaded_len / total_size) * 100))
+                    step_p = (progress // 10) * 10
+                    if step_p > last_reported_p and step_p <= 100:
+                        last_reported_p = step_p
+                        client.publish("room1/ota/status", json.dumps({
+                            "version": version,
+                            "state": "downloading",
+                            "progress": step_p
+                        }), qos=0)
+                        logger.info("OTA Downloading: %d%%", step_p)
+    except Exception as e:
+        logger.error("OTA: Lỗi tải file từ %s: %s", url, e)
+        fail_payload = {"version": version, "state": "failed", "error": "download_failed"}
+        client.publish("room1/ota/status", json.dumps(fail_payload), qos=0)
+        return False
+
+    if last_reported_p < 100:
+        client.publish("room1/ota/status", json.dumps({"version": version, "state": "downloading", "progress": 100}), qos=0)
+
+    # 3. Verifying
+    client.publish("room1/ota/status", json.dumps({"version": version, "state": "verifying"}), qos=0)
+    logger.info("OTA: Đang kiểm tra sha256...")
+
+    calc_sha256 = hasher.hexdigest().lower()
+    if corrupt:
+        # Cố tình làm sai lệch 1 ký tự sha256
+        calc_sha256 = ("f" if calc_sha256[0] != "f" else "0") + calc_sha256[1:]
+        logger.warning("OTA [--ota-corrupt]: Đã cố tình làm sai lệch sha256 để kiểm thử ca checksum_mismatch!")
+
+    if calc_sha256 != expected_sha256:
+        logger.error("OTA: Checksum mismatch! Kỳ vọng: %s, Tính được: %s", expected_sha256, calc_sha256)
+        fail_payload = {"version": version, "state": "failed", "error": "checksum_mismatch"}
+        client.publish("room1/ota/status", json.dumps(fail_payload), qos=0)
+        return False
+
+    # 4. Rebooting
+    client.publish("room1/ota/status", json.dumps({"version": version, "state": "rebooting"}), qos=0)
+    logger.info("OTA: Xác thực thành công. Bắt đầu khởi động lại (2.5s)...")
+
+    # Set cờ rebooting để vòng lặp chính ngưng gửi telemetry
+    is_rebooting.set()
+    try:
+        # Ngắt kết nối MQTT 2-3 giây (gửi offline)
+        client.publish("room1/status", json.dumps({"state": "offline"}), qos=1, retain=True)
+        sleep_fn(2.5)
+
+        # Cập nhật fw_version mới
+        set_fw_version(version)
+
+        # Nối lại và gửi online với version mới
+        status_payload = {
+            "state": "online",
+            "fw_version": version,
+            "ip": "127.0.0.1",
+        }
+        client.publish("room1/status", json.dumps(status_payload), qos=1, retain=True)
+
+        # 5. Success
+        client.publish("room1/ota/status", json.dumps({"version": version, "state": "success"}), qos=0)
+        logger.info("OTA: Đã khởi động lại thành công với firmware mới %s!", version)
+        return True
+    finally:
+        is_rebooting.clear()
+
+
 def on_connect(client: mqtt.Client, userdata, flags, rc):
     """Callback khi ket noi thanh cong voi MQTT broker."""
     if rc == 0:
@@ -357,16 +512,17 @@ def on_connect(client: mqtt.Client, userdata, flags, rc):
         # Subscribe cac topic theo CONTRACT mục 4
         client.subscribe("room1/cmd", qos=1)
         client.subscribe("room1/config", qos=1)
-        logger.info("Da subscribe room1/cmd va room1/config")
+        client.subscribe("room1/ota", qos=1)
+        logger.info("Da subscribe room1/cmd, room1/config va room1/ota")
 
         # Publish retained room1/status online (CONTRACT mục 8)
         status_payload = {
             "state": "online",
-            "fw_version": "1.0.0",
+            "fw_version": get_fw_version(),
             "ip": "127.0.0.1",
         }
         client.publish("room1/status", json.dumps(status_payload), qos=1, retain=True)
-        logger.info("Da publish retained room1/status: online")
+        logger.info("Da publish retained room1/status: online (fw_version: %s)", get_fw_version())
     else:
         logger.error("Ket noi MQTT that bai voi ma loi rc=%s", rc)
 
@@ -408,6 +564,15 @@ def on_message(client: mqtt.Client, userdata, msg):
         except Exception as e:
             logger.warning("Loi doc room1/config: %s", e)
 
+    elif topic == "room1/ota":
+        try:
+            ota_data = json.loads(payload_raw)
+        except Exception as e:
+            logger.warning("room1/ota: Loi parse JSON: %s", e)
+            return
+        t = threading.Thread(target=process_ota, args=(client, ota_data, ota_corrupt), daemon=True)
+        t.start()
+
 
 def create_mqtt_client() -> mqtt.Client:
     """Khoi tao MQTT client tuong thich ca paho-mqtt 1.6 va 2.x."""
@@ -426,8 +591,31 @@ def create_mqtt_client() -> mqtt.Client:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="fake_node_b - Giả lập Node B")
+    parser.add_argument(
+        "--node-a-off-after",
+        type=int,
+        default=None,
+        help="Số giây sau đó Node A bị mất kết nối (0 = mất ngay từ đầu)",
+    )
+    parser.add_argument(
+        "--ota-corrupt",
+        action="store_true",
+        default=False,
+        help="Cố tình làm sai lệch sha256 khi OTA để test lỗi checksum_mismatch",
+    )
+    args = parser.parse_args()
+
+    global node_a_off_after, ota_corrupt
+    node_a_off_after = args.node_a_off_after
+    ota_corrupt = args.ota_corrupt
+
     logger.info("=== Khoi dong fake_node_b (Tuấn - TV2) ===")
     logger.info("MQTT Broker: %s:%s | Client ID: %s", BROKER, PORT, CLIENT_ID)
+    if node_a_off_after is not None:
+        logger.info("Che do mat Node A sau: %d giay", node_a_off_after)
+    if ota_corrupt:
+        logger.warning("Che do OTA Corrupt: Bat (se lam hong sha256)")
 
     client = create_mqtt_client()
 
@@ -441,8 +629,14 @@ def main():
     client.loop_start()
 
     global manual_start_time
+    was_node_a_online = True
     try:
         while True:
+            # Khi đang khởi động lại (rebooting OTA), im lặng hoàn toàn, không gửi telemetry
+            if is_rebooting.is_set():
+                time.sleep(0.5)
+                continue
+
             # Kiem tra timeout che do manual (CONTRACT mục 13)
             with state_lock:
                 if state["mode"] == "manual" and manual_start_time is not None:
@@ -453,21 +647,39 @@ def main():
                         state["mode"] = "auto"
                         manual_start_time = None
 
-            # Gui telemetry moi 2 giay (CONTRACT mục 5)
+            current_a_up = is_node_a_online()
+            if was_node_a_online and not current_a_up:
+                logger.warning("Node A da mat ket noi (node_a_online=False). Chuyen telemetry sang chu ky 5s va bo key cam bien.")
+                was_node_a_online = False
+            elif not was_node_a_online and current_a_up:
+                logger.info("Node A da co ket noi lai (node_a_online=True). Chuyen telemetry sang chu ky 2s.")
+                was_node_a_online = True
+
+            # Gui telemetry moi 2s (khi co Node A) hoac 5s (khi mat Node A) (CONTRACT mục 5)
             telemetry_data = make_telemetry()
             client.publish("room1/telemetry", json.dumps(telemetry_data), qos=0)
-            logger.info(
-                "Telemetry [seq=%d]: temp=%.1f°C, hum=%.1f%%, light=%d, fan=%d, light_on=%s, mode=%s",
-                telemetry_data["seq"],
-                telemetry_data["temperature"],
-                telemetry_data["humidity"],
-                telemetry_data["light"],
-                telemetry_data["fan_level"],
-                telemetry_data["light_on"],
-                telemetry_data["mode"],
-            )
 
-            time.sleep(2)
+            if current_a_up:
+                logger.info(
+                    "Telemetry [seq=%d]: temp=%.1f°C, hum=%.1f%%, light=%d, fan=%d, light_on=%s, mode=%s",
+                    telemetry_data["seq"],
+                    telemetry_data["temperature"],
+                    telemetry_data["humidity"],
+                    telemetry_data["light"],
+                    telemetry_data["fan_level"],
+                    telemetry_data["light_on"],
+                    telemetry_data["mode"],
+                )
+                time.sleep(2)
+            else:
+                logger.info(
+                    "Telemetry [Node A Offline]: fan=%d, light_on=%s, mode=%s, fw_version=%s",
+                    telemetry_data["fan_level"],
+                    telemetry_data["light_on"],
+                    telemetry_data["mode"],
+                    telemetry_data["fw_version"],
+                )
+                time.sleep(5)
     except KeyboardInterrupt:
         logger.info("Nhan tin hieu dung script (Ctrl+C)...")
     finally:

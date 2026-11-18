@@ -45,13 +45,24 @@ pip install paho-mqtt==1.6.1
 ```powershell
 python App/IOT/gateway/test_fake_node_b.py
 ```
-Kết quả mong đợi: `Ran 7 tests ... OK`.
+Kết quả mong đợi: `Ran 15 tests ... OK` (kiểm tra 5 ca test cơ bản, tuân thủ CONTRACT, chế độ mất Node A và các kịch bản OTA).
 
 ### 2.2. Chạy `fake_node_b.py`
 
 ```powershell
 python App/IOT/gateway/fake_node_b.py
 ```
+
+Các tham số mở rộng (Issue #44):
+- `--node-a-off-after N`: Giả lập mất kết nối Node A sau N giây (`0` = mất ngay từ đầu). Khi mất Node A, telemetry chuyển sang chu kỳ **5 giây/lần**, `node_a_online: false` và **bỏ toàn bộ key cảm biến**.
+  ```powershell
+  # Ví dụ: Node A mất kết nối sau 10 giây
+  python App/IOT/gateway/fake_node_b.py --node-a-off-after 10
+  ```
+- `--ota-corrupt`: Cố tình làm sai lệch mã sha256 khi nhận lệnh OTA để kiểm thử ca lỗi `checksum_mismatch`.
+  ```powershell
+  python App/IOT/gateway/fake_node_b.py --ota-corrupt
+  ```
 
 Script sẽ kết nối tới `localhost:1883` và:
 - Gửi retained status `online` lên topic `room1/status`.
@@ -94,7 +105,7 @@ Script sẽ kết nối tới `localhost:1883` và:
 ```powershell
 python App/IOT/gateway/test_bridge.py
 ```
-Kết quả mong đợi: `Ran 4 tests ... OK` (kiểm tra tách telemetry 2 thiết bị, ánh xạ RPC 2 chiều, timeout và kiểm tra ràng buộc cấu hình).
+Kết quả mong đợi: `Ran 6 tests ... OK` (kiểm tra tách telemetry 2 thiết bị, ánh xạ RPC 2 chiều, chuẩn hóa tham số chuỗi, timeout và kiểm tra ràng buộc cấu hình).
 
 ### 3.3. Chạy `bridge.py` trong thực tế
 
