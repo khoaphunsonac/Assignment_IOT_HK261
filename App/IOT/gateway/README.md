@@ -45,7 +45,7 @@ pip install paho-mqtt==1.6.1
 ```powershell
 python App/IOT/gateway/test_fake_node_b.py
 ```
-Kết quả mong đợi: `Ran 13 tests ... OK` (kiểm tra 5 ca test cơ bản, tuân thủ CONTRACT, chế độ mất Node A và các kịch bản OTA).
+Kết quả mong đợi: `Ran 15 tests ... OK` (kiểm tra 5 ca test cơ bản, tuân thủ CONTRACT, chế độ mất Node A và các kịch bản OTA).
 
 ### 2.2. Chạy `fake_node_b.py`
 

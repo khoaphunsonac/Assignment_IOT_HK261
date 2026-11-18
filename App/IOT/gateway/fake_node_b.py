@@ -65,6 +65,7 @@ fw_version = "1.0.0"
 fw_version_lock = threading.Lock()
 node_a_off_after: Optional[int] = None
 ota_corrupt: bool = False
+is_rebooting = threading.Event()
 
 
 def get_fw_version() -> str:
@@ -468,7 +469,7 @@ def process_ota(client: mqtt.Client, ota_data: Dict[str, Any], corrupt: bool = F
         calc_sha256 = ("f" if calc_sha256[0] != "f" else "0") + calc_sha256[1:]
         logger.warning("OTA [--ota-corrupt]: Đã cố tình làm sai lệch sha256 để kiểm thử ca checksum_mismatch!")
 
-    if expected_sha256 and calc_sha256 != expected_sha256:
+    if calc_sha256 != expected_sha256:
         logger.error("OTA: Checksum mismatch! Kỳ vọng: %s, Tính được: %s", expected_sha256, calc_sha256)
         fail_payload = {"version": version, "state": "failed", "error": "checksum_mismatch"}
         client.publish("room1/ota/status", json.dumps(fail_payload), qos=0)
@@ -478,25 +479,30 @@ def process_ota(client: mqtt.Client, ota_data: Dict[str, Any], corrupt: bool = F
     client.publish("room1/ota/status", json.dumps({"version": version, "state": "rebooting"}), qos=0)
     logger.info("OTA: Xác thực thành công. Bắt đầu khởi động lại (2.5s)...")
 
-    # Ngắt kết nối MQTT 2-3 giây (gửi offline)
-    client.publish("room1/status", json.dumps({"state": "offline"}), qos=1, retain=True)
-    sleep_fn(2.5)
+    # Set cờ rebooting để vòng lặp chính ngưng gửi telemetry
+    is_rebooting.set()
+    try:
+        # Ngắt kết nối MQTT 2-3 giây (gửi offline)
+        client.publish("room1/status", json.dumps({"state": "offline"}), qos=1, retain=True)
+        sleep_fn(2.5)
 
-    # Cập nhật fw_version mới
-    set_fw_version(version)
+        # Cập nhật fw_version mới
+        set_fw_version(version)
 
-    # Nối lại và gửi online với version mới
-    status_payload = {
-        "state": "online",
-        "fw_version": version,
-        "ip": "127.0.0.1",
-    }
-    client.publish("room1/status", json.dumps(status_payload), qos=1, retain=True)
+        # Nối lại và gửi online với version mới
+        status_payload = {
+            "state": "online",
+            "fw_version": version,
+            "ip": "127.0.0.1",
+        }
+        client.publish("room1/status", json.dumps(status_payload), qos=1, retain=True)
 
-    # 5. Success
-    client.publish("room1/ota/status", json.dumps({"version": version, "state": "success"}), qos=0)
-    logger.info("OTA: Đã khởi động lại thành công với firmware mới %s!", version)
-    return True
+        # 5. Success
+        client.publish("room1/ota/status", json.dumps({"version": version, "state": "success"}), qos=0)
+        logger.info("OTA: Đã khởi động lại thành công với firmware mới %s!", version)
+        return True
+    finally:
+        is_rebooting.clear()
 
 
 def on_connect(client: mqtt.Client, userdata, flags, rc):
@@ -626,6 +632,11 @@ def main():
     was_node_a_online = True
     try:
         while True:
+            # Khi đang khởi động lại (rebooting OTA), im lặng hoàn toàn, không gửi telemetry
+            if is_rebooting.is_set():
+                time.sleep(0.5)
+                continue
+
             # Kiem tra timeout che do manual (CONTRACT mục 13)
             with state_lock:
                 if state["mode"] == "manual" and manual_start_time is not None:

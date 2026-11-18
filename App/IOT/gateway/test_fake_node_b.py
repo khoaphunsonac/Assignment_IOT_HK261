@@ -18,6 +18,7 @@ from fake_node_b import (
     get_fw_version,
     set_fw_version,
     process_ota,
+    is_rebooting,
 )
 
 
@@ -280,6 +281,64 @@ class TestFakeNodeB(unittest.TestCase):
         status_msgs = [p for t, p in published if t == "room1/status" and p.get("state") == "online"]
         self.assertTrue(len(status_msgs) > 0)
         self.assertEqual(status_msgs[-1]["fw_version"], "1.0.1")
+
+    def test_ota_missing_sha256(self):
+        """Kiem tra OTA: Thieu sha256 -> state failed, error checksum_mismatch."""
+        set_fw_version("1.0.0")
+        client = MagicMock()
+        published = []
+        client.publish = lambda topic, payload, qos=0, retain=False: published.append((topic, json.loads(payload)))
+
+        content = b"valid firmware binary data"
+        fake_resp = MagicMock()
+        fake_resp.read.side_effect = [content, b""]
+        fake_resp.headers = {"Content-Length": str(len(content))}
+        fake_resp.__enter__.return_value = fake_resp
+        fake_resp.__exit__.return_value = False
+
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            # Khong gui sha256
+            res = process_ota(client, {
+                "version": "1.0.1",
+                "url": "http://localhost/fw.bin"
+            })
+            self.assertFalse(res)
+
+        failed_msgs = [p for t, p in published if t == "room1/ota/status" and p.get("state") == "failed"]
+        self.assertTrue(len(failed_msgs) > 0)
+        self.assertEqual(failed_msgs[0]["error"], "checksum_mismatch")
+
+    def test_ota_rebooting_event(self):
+        """Kiem tra co is_rebooting duoc set trong luc reboot va clear sau khi xong."""
+        set_fw_version("1.0.0")
+        client = MagicMock()
+        content = b"valid firmware binary data"
+        real_sha256 = hashlib.sha256(content).hexdigest()
+
+        fake_resp = MagicMock()
+        fake_resp.read.side_effect = [content, b""]
+        fake_resp.headers = {"Content-Length": str(len(content))}
+        fake_resp.__enter__.return_value = fake_resp
+        fake_resp.__exit__.return_value = False
+
+        was_rebooting_set = False
+
+        def mock_sleep(duration):
+            nonlocal was_rebooting_set
+            was_rebooting_set = is_rebooting.is_set()
+
+        self.assertFalse(is_rebooting.is_set())
+
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            res = process_ota(
+                client,
+                {"version": "1.0.1", "url": "http://localhost/fw.bin", "sha256": real_sha256},
+                sleep_fn=mock_sleep
+            )
+            self.assertTrue(res)
+
+        self.assertTrue(was_rebooting_set, "is_rebooting phai duoc set trong luc sleep_fn goi")
+        self.assertFalse(is_rebooting.is_set(), "is_rebooting phai duoc clear sau khi OTA xong")
 
 
 if __name__ == "__main__":
