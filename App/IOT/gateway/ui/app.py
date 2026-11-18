@@ -1,3 +1,8 @@
+# 3 lệnh sau để chạy local UI (khi đã vào venv và thiết lập các chương trình cần thiết):
+# & "C:\Program Files\mosquitto\mosquitto.exe" -c App\IOT\gateway\mosquitto.conf -v
+# python App\IOT\gateway\fake_node_b.py
+# streamlit run App\IOT\gateway\ui\app.py
+
 import json
 import os
 import threading
