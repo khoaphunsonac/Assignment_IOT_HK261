@@ -139,11 +139,14 @@ Notification center:
   5. Switch `Can gui RPC?`: `mode` khác `auto` thì dừng; chỉ đi nhánh `autoFan` / `autoLight` khi giá trị mới **khác** giá trị hiện tại.
   6. Script tạo `{method: 'autoFan', params: <int>}` hoặc `{method: 'autoLight', params: <bool>}` → *RPC call request* (timeout 10 s) tới `room1-node-b`. Không bao giờ gửi `setFan`/`setLight` (CONTRACT 11.4).
 - Đổi ngưỡng trên widget `Ngưỡng tự động` có tác dụng ngay ở bản tin kế tiếp, vì rule đọc lại shared attribute mỗi lần.
+- **Điều kiện để chạy:** `room1-node-b` phải có đủ 8 shared attribute ngưỡng và telemetry `fan_level`, `light_on`, `mode`. Thiếu một key thì node lấy attribute đi nhánh **Failure** sang node log `Bao thieu nguong/trang thai` và T12 không gửi gì. Xem ở tab *Events* của node này (debug Failure đã bật). Import sang tài khoản mới thì tạo đủ ngưỡng (mục 1) và chạy `bridge.py` + Node B trước.
+- `fan_level` khác 0/1/2 thì script không đổi mức quạt.
 - Đã thử 18/11 với `fake_node_b.py` + `bridge.py` (bơm thêm bản tin vào `room1/telemetry` bằng paho):
   - 34 °C, đang quạt 1, auto → `autoFan 2`, trả `ok: true`.
   - Bấm `setFan 0` (chuyển `manual`), bơm 34 °C → không có `autoFan` nào.
   - `fan_on_1` = 31, bơm 30.5 °C → không gửi; đổi `fan_on_1` = 30 trên widget, bơm 30.5 °C → `autoFan 1`, `ok: true`.
   - `presence` = false, 34 °C → không gửi.
+  - Sau khi thêm nhánh Failure (theo review), bơm 34 °C lúc quạt 0 → `autoFan 2`, `ok: true`.
 - Lưu ý:
   - Hai bản tin node-a sát nhau trước khi Node B kịp báo `fan_level` mới có thể sinh 2 RPC giống nhau. Vô hại vì `autoFan`/`autoLight` gửi cùng giá trị.
   - `fake_node_b.py` sinh `light` ngẫu nhiên 1200–2600 mỗi 2 s nên đèn bật/tắt liên tục quanh 1500/2500. Cảm biến thật không bị vậy.
