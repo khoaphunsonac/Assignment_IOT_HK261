@@ -17,6 +17,7 @@ Có 2 cách thu. **Dùng cách 1 (MQTT)**. Cách 2 (Serial) chỉ dùng khi khô
 
 Mỗi người dùng hotspot điện thoại và laptop của mình, nên phải sửa `secrets.h` rồi nạp lại **cả 2 node**. Không cần MAC: 2 node tự ghép cặp.
 Lệnh bên dưới ghi theo repo ở `D:\Assignment_IOT_HK261`, máy khác thì đổi lại đường dẫn.
+Cần cài sẵn trên laptop: Mosquitto (cách cài ở `App/IOT/gateway/README.md` mục 1.1), VS Code + PlatformIO, Python 3 (chạy script đổi CSV).
 
 1. Bật hotspot điện thoại, chọn băng tần **2.4 GHz** (hoặc "tương thích tối đa"), giữ màn hình điện thoại sáng. Laptop nối vào hotspot này.
 2. Lấy IP laptop: chạy `ipconfig`, xem dòng `IPv4 Address` của card **Wi-Fi** (bỏ qua card VirtualBox/VMware).
