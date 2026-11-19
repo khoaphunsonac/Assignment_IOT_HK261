@@ -13,11 +13,59 @@ Có 2 cách thu. **Dùng cách 1 (MQTT)**. Cách 2 (Serial) chỉ dùng khi khô
 
 ---
 
+## Chuẩn bị (mỗi buổi lab, khoảng 15 phút)
+
+Mỗi người dùng hotspot điện thoại và laptop của mình, nên phải sửa `secrets.h` rồi nạp lại **cả 2 node**. Không cần MAC: 2 node tự ghép cặp.
+Lệnh bên dưới ghi theo repo ở `D:\Assignment_IOT_HK261`, máy khác thì đổi lại đường dẫn.
+
+1. Bật hotspot điện thoại, chọn băng tần **2.4 GHz** (hoặc "tương thích tối đa"), giữ màn hình điện thoại sáng. Laptop nối vào hotspot này.
+2. Lấy IP laptop: chạy `ipconfig`, xem dòng `IPv4 Address` của card **Wi-Fi** (bỏ qua card VirtualBox/VMware).
+3. Sửa `App/IOT/firmware/common/secrets.h`. Chưa có file này thì chép từ `secrets.example.h` cùng thư mục. Điền 3 dòng:
+   ```c
+   #define WIFI_SSID "ten_hotspot_cua_ban"
+   #define WIFI_PASS "mat_khau_hotspot"
+   #define MQTT_HOST "IPv4_vua_lay_o_buoc_2"
+   ```
+   `secrets.h` không commit (đã có trong `.gitignore`). Bật lại hotspot thì IP có thể đổi: làm lại bước 2, 3 và nạp lại Node B.
+4. Mở broker ở 1 tab riêng, để chạy suốt buổi:
+   ```powershell
+   cd D:\Assignment_IOT_HK261
+   ```
+   ```powershell
+   mosquitto -c App\IOT\gateway\mosquitto.conf -v
+   ```
+5. Cắm module theo bảng "Phần cứng" trong `App/IOT/README.md` (Node A: ánh sáng A1-A0, PIR D4-D3, DHT20 cổng I2C; Node B: quạt D6-D5, LED RGB D8-D7). Rồi nạp cả 2 node từ nhánh `main` mới nhất, mỗi lần chỉ cắm 1 board vào laptop.
+
+   Cắm board B, chạy:
+   ```powershell
+   cd D:\Assignment_IOT_HK261\App\IOT\firmware\node_b
+   ```
+   ```powershell
+   & "$HOME\.platformio\penv\Scripts\pio.exe" run -t upload
+   ```
+   Rút board B (cắm củ sạc), cắm board A, chạy:
+   ```powershell
+   cd D:\Assignment_IOT_HK261\App\IOT\firmware\node_a
+   ```
+   ```powershell
+   & "$HOME\.platformio\penv\Scripts\pio.exe" run -t upload
+   ```
+   Nạp xong, Node A cắm củ sạc hay laptop đều được. Upload lỗi thì xem mục 1 trong `docs/LOI_THUONG_GAP.md`.
+6. Kiểm: mở tab mới chạy lệnh dưới. Mỗi 2 s có 1 dòng chứa `"temperature"` là đạt, chuyển sang cách 1.
+   ```powershell
+   mosquitto_sub -h localhost -t room1/telemetry
+   ```
+   Không thấy gì, hoặc chỉ thấy `"node_a_online":false`: xem mục 1, 2 trong `docs/LOI_THUONG_GAP.md`.
+
+Không cần chạy bridge hay mở CoreIOT để thu data.
+
+---
+
 ## Cách 1: thu qua MQTT (khuyên dùng)
 
 Lấy telemetry Node B gửi lên broker. Không cần cắm Node A vào laptop (cắm củ sạc cũng được), không bị đứt như Serial.
 
-**Cần:** broker chạy trên laptop, Node B đã nối MQTT, Node A đã ghép cặp với Node B (telemetry có `temperature`, `humidity`).
+**Cần:** đã làm xong mục Chuẩn bị (broker chạy, Node B nối MQTT, Node A ghép cặp, telemetry có `temperature`).
 
 1. Mở 1 tab terminal mới (PowerShell), chạy:
    ```powershell

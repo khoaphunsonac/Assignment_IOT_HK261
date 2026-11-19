@@ -18,15 +18,17 @@ Quy ước dữ liệu giữa các phần: [docs/CONTRACT.md](../../docs/CONTRAC
 
 Board: YoloUNO (ESP32-S3), 2 board. Chân đã kiểm trên board ngày 10/11/2026:
 
-| Node | Module | Chân |
-|---|---|---|
-| A | Cảm biến ánh sáng | GPIO 1 (ADC1) |
-| A | PIR | GPIO 6 |
-| A | DHT20 (I2C 0x38) | SDA 11, SCL 12 |
-| B | Quạt mini (PWM) | GPIO 8 |
-| B | LED RGB (NeoPixel) | GPIO 10 |
-| B | LCD 16x2 (I2C 0x21) | SDA 11, SCL 12 |
-| Cả 2 | LED trên board | GPIO 48 |
+| Node | Module | Cắm vào cổng Grove trên board | Chân |
+|---|---|---|---|
+| A | Cảm biến ánh sáng | A1-A0 (cổng vàng) | GPIO 1 (ADC1) |
+| A | PIR | D4-D3 (cổng trắng) | GPIO 6 |
+| A | DHT20 (I2C 0x38) | cổng I2C (cổng đỏ) | SDA 11, SCL 12 |
+| B | Quạt mini (PWM) | D6-D5 (cổng trắng) | GPIO 8 |
+| B | LED RGB (NeoPixel) | D8-D7 (cổng trắng) | GPIO 10 |
+| B | LCD 16x2 (I2C 0x21) | cổng I2C (cổng đỏ) | SDA 11, SCL 12 |
+| Cả 2 | LED trên board | (có sẵn) | GPIO 48 |
+
+Cổng Grove có 2 chân tín hiệu, module 1 tín hiệu dùng chân số nhỏ hơn (vd cổng D6-D5 là chân D5 = GPIO 8).
 
 Cảm biến analog chỉ dùng ADC1 (GPIO 1–10), vì ADC2 không đọc được khi WiFi bật.
 
