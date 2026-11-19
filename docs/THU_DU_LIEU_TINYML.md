@@ -1,6 +1,6 @@
 # Thu dữ liệu TinyML (ai lên lab thì thu)
 
-Phục vụ #30 (Phú train lại model). File của thầy chỉ có vài chục dòng, cần dữ liệu thật từ DHT20 của Node A.
+Phục vụ #30 (train lại model TinyML). File của thầy chỉ có vài chục dòng, cần dữ liệu thật từ DHT20 của Node A.
 
 **Mục tiêu trước CN 29/11:** >= 1500 mẫu nhãn 0 và >= 500 mẫu nhãn 1, từ >= 3 buổi lab khác nhau. Node A gửi 1 mẫu mỗi 2 s, nên 1 giờ chạy được khoảng 1800 mẫu.
 
@@ -89,7 +89,7 @@ Node A cắm laptop, log lấy qua USB. Trên một số laptop monitor hay đ�
   - MQTT: Node A chưa ghép cặp (mọi dòng đều `node_a_online: false`), hoặc lệnh `mosquitto_sub` sai topic.
   - Serial: sai thứ tự filter, file không có giờ ở đầu dòng.
 - **Mất mạng hotspot giữa chừng:** file MQTT hụt đoạn đó, không sao. Ghi chú giờ mất mạng vào `.txt` (dòng bắt đầu bằng `#`).
-- **Node A nằm cạnh quạt Node B đang chạy:** vẫn là nhãn 0, nhưng ghi chú trong `.txt` để Phú biết.
+- **Node A nằm cạnh quạt Node B đang chạy:** vẫn là nhãn 0, nhưng ghi chú trong `.txt` để người train biết.
 - **Thở/thổi liên tục 5 phút rất mệt:** thổi ngắt quãng cũng được, ghi giờ bắt đầu và kết thúc cả đoạn; hoặc đổi sang nắm tay.
 
 ---

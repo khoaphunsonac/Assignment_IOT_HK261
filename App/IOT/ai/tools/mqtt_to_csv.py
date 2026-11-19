@@ -28,7 +28,7 @@ Khác với log Serial, cần biết:
   - `ts` là giờ NTP của Node B (epoch ms, UTC). Script cộng 7 giờ để so với file .txt.
   - `temperature` trong telemetry là TRUNG BÌNH 2 lần đo gần nhất (Node B tính,
     control.cpp control_on_node_a), không phải số đo thô như trên Serial. Chênh lệch
-    nhỏ (nhiệt độ đổi chậm, 2 mẫu cách nhau 2 s) nhưng Phú cần biết khi so với Serial.
+    nhỏ (nhiệt độ đổi chậm, 2 mẫu cách nhau 2 s) nhưng người train cần biết khi so với Serial.
   - Mẫu DHT20 lỗi (valid = 0) Node A không gửi, nên log MQTT không có mẫu lỗi.
   - Khi Node A mất, Node B vẫn gửi telemetry nhưng không có key temperature/humidity
     (node_a_online = false). Script bỏ các dòng này.
