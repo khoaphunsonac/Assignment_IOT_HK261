@@ -1,0 +1,14 @@
+# 19/11/2026, Minh, phòng lab. Giờ theo tin nhắn "bd"/"xong" của Minh (giờ VN).
+# Lần 0 (nắm tay) kết thúc trước khi file MQTT bắt đầu (10:26:55). Vẫn ghi để script bỏ đoạn đang nguội sau nó.
+# Mất mạng hotspot 10:53:55 - 10:56:20: file hụt đoạn này.
+# Lúc lần 1 quạt Node B có chạy (fan 2 do RuleChain), lần 2-4 quạt tắt.
+# nắm tay (lần 0)
+10:21:40 10:25:50
+# nắm tay
+10:30:52 10:35:39
+# nắm tay
+10:39:46 10:44:49
+# thổi hơi
+10:48:57 10:53:14
+# thổi hơi
+11:01:06 11:05:15
