@@ -298,3 +298,37 @@ size_t telemetry_build(const TelemetryIn *in, char *buf, size_t cap);
 //     - "state": luôn đủ 3 key fan_level, light_on, mode (kể cả khi lỗi).
 size_t resp_build(const ParsedCmd *cmd, CmdErr err, uint8_t fan, bool light, LMode mode,
                   char *buf, size_t cap);
+
+// =====================================================================================
+// 7. Khi nào gửi PKT_CONFIG xuống Node A (#43, CONTRACT mục 3 và 7)
+// =====================================================================================
+// Node A không có WiFi nên không thấy room1/config. Node B chuyển empty_timeout_s xuống
+// bằng gói ESP-NOW PktConfig. Gửi khi:
+//   (a) vừa ghép cặp với Node A (Node A vừa boot thì đang dùng mặc định 60 s),
+//   (b) empty_timeout_s đổi (dashboard đổi ngưỡng -> room1/config -> config_store),
+//   (c) đã CFG_RESEND_MS kể từ lần gửi trước (gói (a)/(b) có thể mất; gửi lại 8 byte
+//       mỗi 30 s rẻ hơn nhiều so với viết cơ chế ACK riêng).
+// Hàm thuần: KHÔNG gửi gì, chỉ trả lời "giờ có nên gửi không" và ghi nhớ đã gửi.
+#define CFG_RESEND_MS 30000u
+
+typedef struct {
+  bool     have_peer;     // đã có Node A (đã ghép cặp ít nhất 1 lần từ lúc boot)
+  bool     sent_once;     // đã gửi lần nào cho Node A HIỆN TẠI chưa (ghép lại -> false)
+  uint32_t last_sent_s;   // empty_timeout_s của lần gửi trước
+  uint32_t last_send_ms;  // millis() lần gửi trước
+} CfgTxState;
+
+// cfg_tx_init: lúc boot, chưa có Node A -> không gửi gì.
+void cfg_tx_init(CfgTxState *s);
+
+// cfg_tx_on_pair: gọi mỗi lần Node A xin ghép cặp (kể cả Node A cũ ghép lại sau reset).
+//   Làm: have_peer = true, sent_once = false -> lần hỏi kế tiếp chắc chắn gửi (ca a).
+void cfg_tx_on_pair(CfgTxState *s);
+
+// cfg_tx_should_send: gọi ~1 s/lần trong task_espnow.
+//   Vào : timeout_s = empty_timeout_s đang dùng (config_store_get()), now_ms = millis().
+//   Ra  : true  -> NÊN gửi ngay PktConfig với timeout_s; hàm ĐÃ ghi nhớ lần gửi này
+//                  (sent_once = true, last_sent_s = timeout_s, last_send_ms = now_ms).
+//         false -> không gửi, KHÔNG đổi gì trong *s.
+//   Đúng cả khi millis() tràn.
+bool cfg_tx_should_send(CfgTxState *s, uint32_t timeout_s, uint32_t now_ms);

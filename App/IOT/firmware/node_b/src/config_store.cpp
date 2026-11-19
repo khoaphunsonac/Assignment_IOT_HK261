@@ -69,7 +69,8 @@ bool config_store_apply_json(const char *payload, size_t len) {
   p.putBytes(NVS_KEY_TH, &th, sizeof(th));
   p.end();
   print_th("[CFG] Moi:", &th);
-  // TODO(#43): gửi PKT_CONFIG xuống Node A khi empty_timeout_s đổi
+  // #43: KHÔNG gửi PKT_CONFIG ở đây (hàm này chạy trong task_net). task_espnow tự đọc
+  // config_store_get() mỗi giây và gửi khi empty_timeout_s khác lần trước (espnow_rx.cpp).
   return true;
 }
 

@@ -9,11 +9,15 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <string.h>
+#include "node_a_logic.h"  // config_pkt_parse (#43)
 #include "secrets.h"  // WIFI_SSID (firmware/common/secrets.h, chép từ secrets.example.h)
 
 static const uint8_t BCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 static uint8_t node_b_mac[6];   // MAC Node B, học được lúc ghép cặp (không ghi cứng)
 static int cur_channel = -1;    // channel radio đang đứng, -1 = chưa quét
+// #43: true sau khi ghép cặp thành công, false sau unpair. Chỉ task_espnow_tx ghi/đọc
+// (qua pair/unpair/poll_config) nên không cần volatile hay mutex.
+static bool s_paired = false;
 
 // Callback chạy trong task WiFi: chỉ kiểm nhanh rồi đẩy vào queue, không Serial.print, không chờ.
 typedef struct {
@@ -23,6 +27,16 @@ typedef struct {
 
 static QueueHandle_t send_result_queue;  // 1 phần tử bool: kết quả ACK của lần gửi unicast gần nhất
 static QueueHandle_t pair_queue;         // PairInfo: Node B trả lời ghép cặp
+
+// #43: 1 gói PKT_CONFIG hợp lệ mà on_recv đã nhận: MAC người gửi + số giây.
+// Chưa kiểm MAC trong callback vì lúc PKT_CONFIG tới (ngay sau PKT_PAIR_RESP) có thể
+// task_espnow_tx CHƯA kịp chép MAC Node B vào node_b_mac -> so MAC lúc đó sẽ loại oan.
+// Nên callback chỉ cất vào queue, espnow_link_poll_config() so MAC sau khi đã ghép xong.
+typedef struct {
+  uint8_t  mac[6];
+  uint16_t timeout_s;
+} CfgInfo;
+static QueueHandle_t config_queue;       // CfgInfo, 4 phần tử, đầy thì bỏ gói mới
 
 // ---------- Callback (core 2.0.17) ----------
 // on_sent: ESP-NOW gọi sau mỗi lần gửi, status = có ACK hay không.
@@ -35,12 +49,31 @@ static void on_sent(const uint8_t *mac, esp_now_send_status_t status) {
 }
 
 // on_recv: ESP-NOW gọi khi nhận gói bất kỳ (phòng lab có thể có board nhóm khác).
-//   Chỉ nhận PKT_PAIR_RESP hợp lệ: đúng độ dài, magic, version, type. Sai là bỏ.
+//   #43: gói 8 byte -> thử như PKT_CONFIG, hợp lệ thì cất vào config_queue.
+//   Còn lại chỉ nhận PKT_PAIR_RESP hợp lệ: đúng độ dài, magic, version, type. Sai là bỏ.
 //   Kiểm len TRƯỚC memcpy: gói ngắn hơn mà vẫn chép 7 byte là đọc tràn ra ngoài buffer.
 //   memcpy vào biến rồi mới đọc vì data có thể không căn hàng 4 byte (đọc uint32_t magic
 //   ở địa chỉ lệch là undefined behavior).
 //   Hợp lệ: gửi MAC người gửi (= Node B) + channel B báo về cho espnow_link_pair().
 static void on_recv(const uint8_t *mac, const uint8_t *data, int len) {
+  // ----- #43 on_recv nhánh PKT_CONFIG (8 byte) -----
+  // Ví dụ: Node B gửi PktConfig empty_timeout_s = 30
+  //   -> config_pkt_parse ra true, t = 30 -> đẩy {mac B, 30} vào config_queue.
+  //   Gói 8 byte sai magic (board nhóm khác) -> config_pkt_parse false -> bỏ, không đẩy.
+  // Callback chạy trong task WiFi nên không Serial.print, xQueueSend chờ 0 tick
+  // (queue đầy thì bỏ gói, 30 s sau Node B gửi lại).
+  if (len == (int)sizeof(PktConfig)) {
+    uint16_t t;
+    if (config_pkt_parse(data, len, &t)) {
+      CfgInfo ci;
+      memcpy(ci.mac, mac, 6);
+      ci.timeout_s = t;
+      xQueueSend(config_queue, &ci, 0);
+    }
+    return;  // gói 8 byte không bao giờ là PKT_PAIR_RESP (7 byte), xử lý xong thì thoát
+  }
+
+  // ----- PKT_PAIR_RESP (7 byte), code #26 giữ nguyên -----
   PktPairResp ppr;
   if (len != sizeof(ppr)) return;
   memcpy(&ppr, data, sizeof(ppr));
@@ -96,7 +129,8 @@ static int find_hotspot_channel() {
 bool espnow_link_init() {
   send_result_queue = xQueueCreate(1, sizeof(bool));
   pair_queue = xQueueCreate(4, sizeof(PairInfo));
-  if (send_result_queue == NULL || pair_queue == NULL) return false;
+  config_queue = xQueueCreate(4, sizeof(CfgInfo));  // #43
+  if (send_result_queue == NULL || pair_queue == NULL || config_queue == NULL) return false;
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
@@ -145,6 +179,7 @@ bool espnow_link_pair(uint32_t timeout_ms) {
   }
   memcpy(node_b_mac, info.mac, sizeof(node_b_mac));
   if(!add_peer(node_b_mac)) return false;
+  s_paired = true;  // #43: từ giờ poll_config mới nhận PKT_CONFIG
   Serial.printf("[A] GHEP CAP OK voi Node B %02X:%02X:%02X:%02X:%02X:%02X (ch %d)\n",
   node_b_mac[0], node_b_mac[1], node_b_mac[2], node_b_mac[3], node_b_mac[4], node_b_mac[5], info.channel);
   return true;
@@ -171,7 +206,34 @@ bool espnow_link_send(const PktData *pkt) {
 // Xóa peer Node B nếu đang có (khi TX_REPAIR). Kiểm tồn tại vì gọi del trên peer
 // không có sẽ trả lỗi.
 void espnow_link_unpair() {
+  s_paired = false;  // #43: Node B cũ coi như mất, PKT_CONFIG của nó không nhận nữa
   if (esp_now_is_peer_exist(node_b_mac)) esp_now_del_peer(node_b_mac);
+}
+
+// ----- #43 espnow_link_poll_config: lấy PKT_CONFIG từ queue, chỉ nhận từ đúng Node B đã ghép -----
+// Rút hết queue (chờ 0 tick), giữ gói hợp lệ mới nhất (B đổi 60 -> 30 -> 45 liền nhau
+// thì Node A dùng 45).
+// Ví dụ (node_b_mac = AA:..:01, đã ghép):
+//   queue rỗng                            -> false
+//   {AA:..:01, 30}                        -> true, *out = 30
+//   {AA:..:01, 30}, {AA:..:01, 45}        -> true, *out = 45
+//   {CC:..:09, 10} (board khác, cùng magic)-> bỏ, in 1 dòng cảnh báo, false
+//   chưa ghép cặp (s_paired false)        -> bỏ hết, false
+bool espnow_link_poll_config(uint16_t *out_timeout_s) {
+  bool got = false;
+  CfgInfo ci;
+  // Không return giữa vòng: phải rút hết queue để lấy gói mới nhất và không để gói cũ tồn lại.
+  while (xQueueReceive(config_queue, &ci, 0) == pdTRUE) {
+    if (!s_paired) continue;
+    // memcmp != 0 nghĩa là MAC khác Node B đã ghép -> gói của board khác, bỏ.
+    if(memcmp(ci.mac, node_b_mac, 6) != 0) {
+      Serial.printf("[A] PKT_CONFIG tu MAC la, bo\n");
+      continue;
+    }
+    *out_timeout_s = ci.timeout_s;
+    got = true;
+  }
+  return got;
 }
 
 int espnow_link_channel() { return cur_channel; }

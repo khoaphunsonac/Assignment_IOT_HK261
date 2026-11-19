@@ -43,6 +43,7 @@ void task_sensor(void *pvParameters) {
 //       DONE / GIVE_UP / REPAIR thì seq++ và thoát vòng trong. Vòng trong tối đa
 //       TX_MAX_RETRY + 1 = 4 lần, con số này do tx_on_result quyết định, không đếm ở đây.
 //       GIVE_UP/REPAIR vẫn seq++ để B thấy seq nhảy và tự đếm là mất 1 gói.
+//   (1b) #43: lấy PKT_CONFIG (nếu có) và đổi thời gian chờ phòng trống.
 //   (5) Khoảng 10 s in 1 dòng thống kê (không dùng vTaskDelay vì sẽ chặn việc gửi).
 // seq là trạng thái của cả task (sống từ lúc boot), pd.seq chỉ là bản chụp lúc gửi.
 void task_espnow_tx(void *pvParameters) {
@@ -52,6 +53,7 @@ void task_espnow_tx(void *pvParameters) {
   TxState tx;
   tx_init(&tx);
   uint32_t sent_ok = 0, resend = 0, give_up = 0, repair = 0;  // in ra để làm minh chứng PR
+  uint32_t cfg_rx = 0;  // #43: số lần nhận PKT_CONFIG hợp lệ (B gửi lại 30 s/lần -> tăng đều)
   unsigned long last = millis();  // mốc lần in thống kê trước
 
   while (1) {
@@ -69,6 +71,21 @@ void task_espnow_tx(void *pvParameters) {
         pair_fail = 0;
       }
       continue;
+    }
+
+    // (1b) #43: nhận PKT_CONFIG (Node B gửi sau ghép cặp, khi đổi, và 30 s/lần)
+    // Ví dụ: đang 60, nhận 30  -> cfg_rx++, đổi sang 30, in "[A] PKT_CONFIG empty_timeout 60 -> 30 s"
+    //        đang 30, nhận 30  -> cfg_rx++, không in (B gửi lại 30 s/lần, in mỗi lần thì rác log)
+    {
+      uint16_t new_s;
+      if (espnow_link_poll_config(&new_s)) {
+        cfg_rx++;
+        uint16_t old_s = sensors_get_empty_timeout_s();
+        if(new_s != old_s) {
+          sensors_set_empty_timeout_s(new_s);
+          Serial.printf("[A] PKT_CONFIG empty_timeout %u -> %u s\n", old_s, new_s);
+        }
+      }
     }
 
     // (2) Lấy mẫu, bỏ mẫu lỗi
@@ -117,8 +134,10 @@ void task_espnow_tx(void *pvParameters) {
     // (5) Thống kê ~10 s/lần. Đặt sau bước (2) nên nếu DHT20 lỗi liên tục thì dòng này
     // cũng tạm không in (chấp nhận ở W1).
     if (millis() - last >= 10000) {
-      Serial.printf("[A] ch: %d paired: %d seq: %u sent_ok: %u resend: %u give_up: %u repair: %u free: %u\n",
-      espnow_link_channel(), paired, seq, sent_ok, resend, give_up, repair, ESP.getMinFreeHeap());
+      Serial.printf("[A] ch: %d paired: %d seq: %u sent_ok: %u resend: %u give_up: %u repair: %u free: %u "
+                    "| empty: %us cfg_rx: %lu\n",
+      espnow_link_channel(), paired, seq, sent_ok, resend, give_up, repair, ESP.getMinFreeHeap(),
+      sensors_get_empty_timeout_s(), (unsigned long)cfg_rx);
       last = millis();
     }
   }

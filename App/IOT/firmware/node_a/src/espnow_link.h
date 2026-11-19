@@ -34,5 +34,11 @@ bool espnow_link_send(const PktData *pkt);
 // espnow_link_unpair: xóa peer Node B (khi mất Node B, trước khi ghép lại).
 void espnow_link_unpair();
 
+// espnow_link_poll_config (#43): lấy PKT_CONFIG Node B đã gửi (nếu có), KHÔNG chờ.
+//   Ra : true  -> *out_timeout_s = empty_timeout_s MỚI NHẤT nhận được từ đúng Node B đã ghép.
+//        false -> không có gói nào dùng được (chưa nhận, chưa ghép cặp, hoặc từ MAC lạ).
+//   Gọi từ task_espnow_tx (cùng task với pair/unpair nên đọc node_b_mac không cần khóa).
+bool espnow_link_poll_config(uint16_t *out_timeout_s);
+
 // espnow_link_channel: channel radio hiện tại (-1 nếu chưa quét). Chỉ để in thống kê.
 int espnow_link_channel();

@@ -371,3 +371,44 @@ size_t resp_build(const ParsedCmd *cmd, CmdErr err, uint8_t fan, bool light, LMo
   if (measureJson(doc) + 1 > cap) return 0;  // không đủ chỗ
   return serializeJson(doc, buf, cap);
 }
+
+// =====================================================================================
+// 7. Khi nào gửi PKT_CONFIG (#43)
+// =====================================================================================
+void cfg_tx_init(CfgTxState *s) {
+  s->have_peer = false;
+  s->sent_once = false;
+  s->last_sent_s = 0;
+  s->last_send_ms = 0;
+}
+
+void cfg_tx_on_pair(CfgTxState *s) {
+  s->have_peer = true;
+  s->sent_once = false;  // Node A (mới hoặc vừa reset) chưa nhận gì -> gửi ngay
+}
+
+// =====================================================================================
+// #43 cfg_tx_should_send: quyết định có gửi PKT_CONFIG không (test: test_cfgtx_*)
+// =====================================================================================
+// Ví dụ (CFG_RESEND_MS = 30000):
+//   chưa ghép cặp                                       -> false
+//   vừa ghép, timeout 600, now 1000                     -> true  (ca a)
+//   hỏi lại ngay, 600, now 2000                         -> false
+//   dashboard đổi: 30, now 3000                         -> true  (ca b), giờ nhớ 30 @3000
+//   30, now 32999                                       -> false (mới 29,999 s)
+//   30, now 33000                                       -> true  (ca c, đủ 30 s)
+//   Node A reset rồi ghép lại (cfg_tx_on_pair), 30, now 34000 -> true (ca a dù vừa gửi)
+// So thời gian bằng now_ms - s->last_send_ms >= CFG_RESEND_MS (trừ trước rồi so) để vẫn
+// đúng khi millis() tràn; so now_ms >= last_send_ms + CFG_RESEND_MS sẽ sai lúc tràn.
+bool cfg_tx_should_send(CfgTxState *s, uint32_t timeout_s, uint32_t now_ms) {
+  if(!s->have_peer) return false;
+  // Gửi khi: (a) chưa gửi cho Node A hiện tại, (b) timeout đổi, (c) đủ CFG_RESEND_MS.
+  bool can_gui = (!s->sent_once) || (s->last_sent_s != timeout_s) || (now_ms - s->last_send_ms >= CFG_RESEND_MS);
+  if (can_gui) {
+    s->sent_once = true;
+    s->last_send_ms = now_ms;
+    s->last_sent_s = timeout_s;
+    return true;
+  }
+  return false;
+}

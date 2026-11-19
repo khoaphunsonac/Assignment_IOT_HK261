@@ -2,6 +2,8 @@
 //   - PKT_PAIR_REQ (broadcast): thêm Node A làm peer, trả PKT_PAIR_RESP kèm channel WiFi.
 //   - PKT_DATA: kiểm seq (trùng / mất / Node A khởi động lại), tính nhiệt độ trung bình,
 //     đưa vào control, xin gửi telemetry.
+//   - #43: gửi PKT_CONFIG (empty_timeout_s) xuống Node A sau ghép cặp, khi ngưỡng đổi,
+//     và gửi lại 30 s/lần (luật ở cfg_tx_should_send, node_b_logic mục 7).
 // Phần lớn code lấy từ espnow_rx_test (#26, đã chạy đúng ở lab 13/11, bước L3–L7).
 #pragma once
 #include <Arduino.h>
