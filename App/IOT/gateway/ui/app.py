@@ -70,11 +70,11 @@ def get_mqtt():
     client.on_message = on_message
 
     try:
-        client.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+        client.connect_async(MQTT_HOST, MQTT_PORT, keepalive=30)
         client.loop_start()
     except Exception as e:
         with lock:
-            data["error"] = f"Không kết nối được {MQTT_HOST}:{MQTT_PORT} ({e})"
+            data["error"] = f"Lỗi cấu hình MQTT {MQTT_HOST}:{MQTT_PORT} ({e})"
 
     return client, data
 
@@ -166,7 +166,7 @@ live()
 st.divider()
 st.subheader("Điều khiển tại chỗ")
 
-col1, col2, col3, col4 = st.columns([1, 1, 1, 1.5])
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 with col1:
     if st.button("Quạt 0 (Tắt)", use_container_width=True):
         send_cmd("setFan", 0)
@@ -177,10 +177,11 @@ with col3:
     if st.button("Quạt 2", use_container_width=True):
         send_cmd("setFan", 2)
 with col4:
-    def on_light_toggle():
-        send_cmd("setLight", bool(st.session_state.light_toggle))
-
-    st.session_state.setdefault(
-        "light_toggle", bool(data["telemetry"].get("light_on", False))
-    )
-    st.toggle("Công tắc đèn", key="light_toggle", on_change=on_light_toggle)
+    if st.button("Bật đèn", use_container_width=True):
+        send_cmd("setLight", True)
+with col5:
+    if st.button("Tắt đèn", use_container_width=True):
+        send_cmd("setLight", False)
+with col6:
+    if st.button("Về auto", use_container_width=True):
+        send_cmd("setMode", "auto")
