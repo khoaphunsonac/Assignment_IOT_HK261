@@ -10,12 +10,14 @@
 // xử lý chậm thì queue đầy và mất gói (đếm ở qfull). Việc của nó lại rất ngắn.
 //
 // task_web (#59, ưu tiên 1): webserver cổng 80, xem web.h.
-// Chưa làm: LCD (#60), OTA (#58), chế độ offline (W4).
+// task_lcd (#60, ưu tiên 1): LCD 16x2, xem lcd.h.
+// Chưa làm: OTA (#58), chế độ offline (W4).
 #include <Arduino.h>
 
 #include "config_store.h"
 #include "control_ext.h"
 #include "espnow_rx.h"
+#include "lcd.h"
 #include "net.h"
 #include "version.h"
 #include "web.h"
@@ -66,6 +68,7 @@ void setup() {
   xTaskCreate(task_net, "task_net", 8192, NULL, 2, NULL);
   xTaskCreate(task_control, "task_control", 4096, NULL, 2, NULL);
   web_start();  // #59: task_web, tự chờ WiFi rồi mới mở cổng 80
+  lcd_start();  // #60: task_lcd, LCD 16x2 I2C 0x21
 }
 
 void loop() {}
