@@ -9,7 +9,8 @@
 // Vì sao task_espnow ưu tiên cao nhất: callback ESP-NOW đẩy vào queue 20 phần tử; task
 // xử lý chậm thì queue đầy và mất gói (đếm ở qfull). Việc của nó lại rất ngắn.
 //
-// Chưa làm ở W2 (TASKS_W2 mục 3): LCD, webserver của Khoa (W3), OTA (W3), chế độ offline (W4).
+// task_web (#59, ưu tiên 1): webserver cổng 80, xem web.h.
+// Chưa làm: LCD (#60), OTA (#58), chế độ offline (W4).
 #include <Arduino.h>
 
 #include "config_store.h"
@@ -17,6 +18,7 @@
 #include "espnow_rx.h"
 #include "net.h"
 #include "version.h"
+#include "web.h"
 
 #define CONTROL_PERIOD_MS 200
 
@@ -63,6 +65,7 @@ void setup() {
   xTaskCreate(task_espnow, "task_espnow", 4096, NULL, 3, NULL);
   xTaskCreate(task_net, "task_net", 8192, NULL, 2, NULL);
   xTaskCreate(task_control, "task_control", 4096, NULL, 2, NULL);
+  web_start();  // #59: task_web, tự chờ WiFi rồi mới mở cổng 80
 }
 
 void loop() {}
