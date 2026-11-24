@@ -69,7 +69,7 @@ void setup() {
   xTaskCreate(task_espnow, "task_espnow", 4096, NULL, 3, NULL);
   xTaskCreate(task_net, "task_net", 8192, NULL, 2, NULL);
   xTaskCreate(task_control, "task_control", 4096, NULL, 2, NULL);
-  // TODO 14 (#58): gọi ota_start() ở đây (SAU task_net: task_ota cần task_net nối MQTT để xác nhận bản mới)
+  ota_start();  // #58: task_ota, gọi SAU task_net để xác nhận bản mới qua MQTT
   web_start();  // #59: task_web, tự chờ WiFi rồi mới mở cổng 80
   lcd_start();  // #60: task_lcd, LCD 16x2 I2C 0x21
 }

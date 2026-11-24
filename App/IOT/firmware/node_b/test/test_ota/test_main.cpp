@@ -1,4 +1,4 @@
-// Testcase cho lib/ota_logic (#58). KHÔNG sửa file này; test sai thì báo Claude.
+// Testcase cho lib/ota_logic (#58), 32 test.
 // Chạy trên PC:  pio test -e native -f test_ota     (chỉ chạy nhóm OTA)
 //                pio test -e native                 (chạy cả test_logic của #42)
 //
@@ -103,7 +103,7 @@ void test_sha_bad(void) {
   TEST_ASSERT_EQUAL_STRING("giu_nguyen", out);  // lỗi thì không ghi out
 }
 
-void test_sha_digest_to_hex(void) {  // hàm viết sẵn
+void test_sha_digest_to_hex(void) {
   uint8_t d[32];
   for (int i = 0; i < 32; i++) d[i] = (uint8_t)(i * 8 + 0x0F);
   char out[OTA_SHA_HEX_LEN + 1];
@@ -331,7 +331,7 @@ void test_status_small_buffer(void) {
   TEST_ASSERT_EQUAL_size_t(0, ota_status_build("1.0.1", OTA_ST_SUCCESS, 0, OTA_ERR_NONE, buf, 10));
 }
 
-void test_status_str_helpers(void) {  // hàm viết sẵn
+void test_status_str_helpers(void) {
   TEST_ASSERT_EQUAL_STRING("downloading", ota_state_str(OTA_ST_DOWNLOADING));
   TEST_ASSERT_EQUAL_STRING("rolled_back", ota_error_str(OTA_ERR_ROLLED_BACK));
 }

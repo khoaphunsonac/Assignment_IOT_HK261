@@ -10,7 +10,7 @@
 //     và Khoa (#59, #60) đang sửa src/ cũng không bị conflict.
 //
 // Nguồn: CONTRACT mục 9 (room1/ota, room1/ota/status), TASKS_W3 mục 3 (#58).
-// Không có code mẫu của thầy cho phần này. Claude viết khung + comment, Minh viết logic.
+// Không có code mẫu của thầy cho phần này.
 //
 // Mẹo thời gian (giống #26, #42): luôn so `now_ms - moc_cu` (uint32_t) với khoảng thời
 // gian, KHÔNG so `now_ms >= moc_cu + khoang`. Phép trừ không dấu vẫn đúng khi millis()
@@ -64,7 +64,7 @@ bool ota_version_parse(const char *s, OtaVersion *out);
 //   bên trong luôn dùng chữ thường.
 bool ota_sha256_normalize(const char *in, char out[OTA_SHA_HEX_LEN + 1]);
 
-// ota_digest_to_hex: (VIẾT SẴN) đổi 32 byte sha256 (mbedtls trả ra) thành 64 ký tự hex thường.
+// ota_digest_to_hex: đổi 32 byte sha256 (mbedtls trả ra) thành 64 ký tự hex thường.
 //   Vào : d = 32 byte. out = mảng >= 65 byte.
 //   Ra  : out = "9f2c...e81a" + '\0'.
 //   Ví dụ: d = {0x00, 0xAB, 0x0F, ...} -> out = "00ab0f..."
@@ -169,7 +169,7 @@ typedef enum {
   OTA_ERR_ROLLED_BACK,        // "rolled_back": bản mới không nối được MQTT trong 60 s
 } OtaError;
 
-// (VIẾT SẴN) đổi enum ra chuỗi đúng CONTRACT 9. Giá trị lạ -> "unknown".
+// Đổi enum ra chuỗi đúng CONTRACT 9. Giá trị lạ -> "unknown".
 const char *ota_state_str(OtaState s);
 const char *ota_error_str(OtaError e);
 

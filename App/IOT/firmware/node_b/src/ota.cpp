@@ -1,8 +1,7 @@
-// ota.cpp - xem ota.h (luồng 4 bước). TODO 11–13 của Minh.
-// Nguồn: Claude viết theo API Arduino core 2.0.17 (Update, HTTPClient, Preferences) và
-// ESP-IDF 4.4 (esp_ota_ops.h, mbedtls). Đã đối chiếu tên hàm với mã nguồn core 2.0.17
-// trên GitHub (Update.h, HTTPClient.h, Preferences.h, mbedtls/sha256.h). Không có code mẫu
-// của thầy; OTA ở lab 10/11 (B5) dùng ArduinoOTA/espota, KHÁC cách này (espota đẩy từ
+// ota.cpp - xem ota.h (luồng 4 bước).
+// Nguồn: API Arduino core 2.0.17 (Update, HTTPClient, Preferences) và ESP-IDF 4.4
+// (esp_ota_ops.h, mbedtls), tên hàm đối chiếu mã nguồn core 2.0.17 trên GitHub (Update.h,
+// HTTPClient.h, Preferences.h, mbedtls/sha256.h). Không có code mẫu của thầy; OTA ở lab 10/11 (B5) dùng ArduinoOTA/espota, KHÁC cách này (espota đẩy từ
 // PlatformIO, không qua MQTT, không kiểm sha256, không rollback).
 #include "ota.h"
 
@@ -35,19 +34,19 @@ static volatile bool s_busy = false;
 static uint8_t s_buf[OTA_CHUNK];  // static: không chiếm 1 KB stack của task_ota
 
 // =====================================================================================
-// VIẾT SẴN: tắt tự xác nhận của Arduino
+// Tắt tự xác nhận của Arduino
 // =====================================================================================
 // Arduino core 2.0.17 (cores/esp32/esp32-hal-misc.c, hàm initArduino) chạy TRƯỚC setup():
 // nếu bản đang chạy ở trạng thái "chờ xác nhận" thì nó TỰ đánh dấu bản này tốt ngay, trừ
 // khi verifyRollbackLater() trả true. Hàm gốc là `weak` trả false; định nghĩa lại ở đây
-// (trả true) thì Arduino để việc xác nhận cho mình làm (TODO 13, sau khi nối được MQTT).
+// (trả true) thì Arduino để việc xác nhận cho boot_check() làm, sau khi nối được MQTT.
 // Bắt buộc `extern "C"`: hàm gốc nằm trong file .c, tên ký hiệu kiểu C. Thiếu extern "C"
 // thì C++ đổi tên (name mangling), linker không thay được -> rollback không bao giờ xảy ra.
 extern "C" bool verifyRollbackLater() { return true; }
 
 bool ota_busy() { return s_busy; }
 
-// VIẾT SẴN. send_status: tạo JSON room1/ota/status rồi nhờ task_net gửi.
+// send_status: tạo JSON room1/ota/status rồi nhờ task_net gửi.
 //   Vào : như ota_status_build (version = bản ĐANG OTA).
 //   Làm : in Serial (để chụp log cho PR), cất vào hàng đợi net_publish_later.
 //   Gọi từ task_ota được (không gọi PubSubClient trực tiếp).
@@ -59,7 +58,7 @@ static void send_status(const char *version, OtaState st, int progress, OtaError
   if (!net_publish_later(T_OTA_STATUS, buf)) Serial.println("[OTA] LOI hang doi publish day");
 }
 
-// VIẾT SẴN. 3 hàm NVS cho key "pending" (version vừa OTA, chờ biết kết quả sau khi khởi động lại).
+// 3 hàm NVS cho key "pending" (version vừa OTA, chờ biết kết quả sau khi khởi động lại).
 // Preferences = thư viện NVS của Arduino (config_store #42 cũng dùng).
 //   pending_load : đọc ra out ("" nếu chưa có). begin(..., true) = chỉ đọc; namespace chưa
 //                  tồn tại thì begin trả false -> coi như "". isKey để khỏi in lỗi NOT_FOUND.
@@ -85,7 +84,7 @@ static void pending_clear() {
   p.end();
 }
 
-// VIẾT SẴN. fail: dọn dẹp khi lỗi giữa chừng rồi trả lại mã lỗi, để viết gọn 1 dòng:
+// fail: dọn dẹp khi lỗi giữa chừng rồi trả lại mã lỗi, để viết gọn 1 dòng:
 //     return fail(OTA_ERR_DOWNLOAD_FAILED, &http, &sha);
 //   Vào : e = mã lỗi trả về; http, sha = cái nào ĐÃ mở thì truyền vào, chưa mở thì NULL.
 //   Làm : Update đang ghi dở -> Update.abort() (phân vùng mới KHÔNG được đặt làm phân vùng
@@ -99,114 +98,225 @@ static OtaError fail(OtaError e, HTTPClient *http, mbedtls_sha256_context *sha) 
 }
 
 // =====================================================================================
-// TODO 11: ota_on_mqtt (chạy trong task_net, phải NHANH, không chặn)
+// ota_on_mqtt: chạy trong task_net (callback MQTT), phải NHANH, không chặn
+//   Lệnh hỏng / trùng bản / đang bận: chỉ in Serial rồi bỏ (CONTRACT 9 không có mã lỗi cho
+//   lệnh hỏng, và lệnh hỏng có thể không có version để gửi status).
+//   Lệnh hợp lệ: chép vào s_cmd, đặt s_busy = true RỒI MỚI đánh thức task_ota. Từ lúc
+//   s_busy = true, hàm này không ghi s_cmd nữa (ca BUSY), nên task_ota đọc s_cmd an toàn
+//   mà không cần mutex.
 // =====================================================================================
-// Khung:
-//   if (s_task == NULL) return;          // (có sẵn) task_ota chưa tạo xong
-//   OtaCmd c;
-//   r = ota_cmd_parse(...)               // điền: ép kiểu payload sang (const char *)
-//   ca r != OTA_CMD_OK      : điền: Serial "[OTA] Bo lenh hong (bad_json/bad_field)", return
-//   d = ota_decide(&c, FW_VERSION, s_busy)
-//   ca BUSY                 : điền: Serial "[OTA] Dang OTA, bo lenh <version>", return
-//   ca SAME_VERSION         : điền: Serial "[OTA] Trung ban dang chay <version>, bo qua", return
-//   ca START                : điền: s_cmd = c; s_busy = true; Serial "[OTA] Nhan lenh 1.0.0 -> 1.0.1 (702157 byte)";
-//                                   xTaskNotifyGive(s_task)   // đánh thức task_ota
-// Vì sao s_busy = true TRƯỚC khi đánh thức: từ lúc này ota_on_mqtt không ghi s_cmd nữa
-// (ca BUSY), nên task_ota đọc s_cmd an toàn, không cần mutex.
-// Vì sao lệnh hỏng không gửi status: CONTRACT 9 không có mã lỗi cho lệnh hỏng; status
-// cần version mà lệnh hỏng có thể không có version.
 void ota_on_mqtt(const uint8_t *payload, unsigned int len) {
   if (s_task == NULL) return;
-  (void)payload;
-  (void)len;
+  OtaCmd c;
+  OtaCmdResult r = ota_cmd_parse((const char *)payload, (size_t)len, &c);
+  if (r != OTA_CMD_OK) {
+    Serial.printf("[OTA] Bo lenh hong (%s)\n",
+                  r == OTA_CMD_BAD_JSON ? "bad_json" : "bad_field");
+    return;
+  }
+  OtaDecision d = ota_decide(&c, FW_VERSION, s_busy);
+  if (d == OTA_DECIDE_BUSY) {
+    Serial.printf("[OTA] Dang OTA, bo lenh %s\n", c.version);
+    return;
+  }
+  if (d == OTA_DECIDE_SAME_VERSION) {
+    Serial.printf("[OTA] Trung ban dang chay %s, bo qua\n", c.version);
+    return;
+  }
+  s_cmd = c;
+  s_busy = true;
+  Serial.printf("[OTA] Nhan lenh %s -> %s (%lu byte)\n",
+                FW_VERSION, c.version, (unsigned long)c.size);
+  xTaskNotifyGive(s_task);
 }
 
 // =====================================================================================
-// TODO 12: download_and_flash (chạy trong task_ota)
-// =====================================================================================
+// download_and_flash: tải firmware, vừa ghi flash vừa tính sha256 (chạy trong task_ota)
 //   Vào : c = lệnh đã kiểm.
-//   Ra  : OTA_ERR_NONE nếu tải đủ, sha256 đúng, Update.end() OK (phân vùng mới đã được đặt
-//         làm phân vùng khởi động, CHƯA restart). Còn lại trả mã lỗi (đã dọn bằng fail()).
-//   Gửi status: "downloading" theo ota_progress_next, "verifying" sau khi tải xong.
-//
-// API cần dùng (đúng tên trong core 2.0.17):
-//   HTTPClient http; http.setTimeout(OTA_HTTP_TIMEOUT_MS); http.begin(c->url) -> bool
-//   int code = http.GET();          200 = HTTP_CODE_OK
-//   int len = http.getSize();       Content-Length; python http.server có gửi
-//   WiFiClient *st = http.getStreamPtr();  st->available(), st->readBytes(buf, n)
-//   http.connected(), http.end()
-//   Update.begin(size) -> bool; Update.write(buf, n) -> số byte đã ghi; Update.end() -> bool;
-//   Update.errorString() -> chuỗi lỗi để in.
-//   mbedtls_sha256_context sha; mbedtls_sha256_init(&sha); mbedtls_sha256_starts_ret(&sha, 0);
-//   mbedtls_sha256_update_ret(&sha, buf, n); mbedtls_sha256_finish_ret(&sha, digest32);
-//   mbedtls_sha256_free(&sha);      (0 trong starts = SHA-256, 1 = SHA-224)
-//   ota_digest_to_hex(digest32, hex65) rồi strcmp với c->sha256 (đều chữ thường).
-//
-// Khung (mỗi "điền" khoảng 1–4 dòng):
-//   (1) http.begin, GET: điền: begin lỗi hoặc code != 200 -> in code, return fail(DOWNLOAD_FAILED, ...)
-//   (2) điền: http.getSize() != c->size -> in cả 2 số, return fail(DOWNLOAD_FAILED, ...)
-//       (lệnh nói 702157 mà server trả file khác cỡ = sai file, dừng sớm khỏi tải phí)
-//   (3) điền: Update.begin(c->size) lỗi -> in Update.errorString(), return fail(WRITE_FAILED, ...)
-//   (4) điền: init + starts sha
-//   (5) got = 0, last = -1, last_data = millis(); gửi mốc 0% (ota_progress_next(0, ...))
-//   (6) while (got < c->size):
-//         avail = st->available()
-//         ca avail == 0: điền: !http.connected() HOẶC millis() - last_data > OTA_NO_DATA_MS
-//                        -> in "Dut ket noi o got/size", return fail(DOWNLOAD_FAILED, &http, &sha);
-//                        còn lại vTaskDelay(1); continue;   (nhường CPU, chờ thêm dữ liệu)
-//         ca có dữ liệu: điền: want = min(avail, sizeof(s_buf), c->size - got)
-//                        n = st->readBytes(s_buf, want); n <= 0 -> continue
-//                        last_data = millis(); cập nhật sha với n byte
-//                        Update.write(s_buf, n) != n -> return fail(WRITE_FAILED, &http, &sha)
-//                        got += n; m = ota_progress_next(got, c->size, last); m >= 0 -> send_status + last = m
-//   (7) http.end(); send_status VERIFYING
-//   (8) điền: finish + free sha, đổi hex, so với c->sha256:
-//         khác -> in cả 2 chuỗi (log này là minh chứng ca checksum_mismatch trong PR),
-//                 return fail(CHECKSUM_MISMATCH, NULL, NULL)   (Update.abort bên trong fail)
-//   (9) điền: Update.end() lỗi -> return fail(WRITE_FAILED, NULL, NULL); OK -> return OTA_ERR_NONE
-// Bẫy:
-//   - Cập nhật sha TRƯỚC hoặc SAU Update.write đều được, nhưng phải đúng n byte vừa đọc
-//     (không phải sizeof(s_buf)): khối cuối thường < 1024.
-//   - Đừng đọc quá c->size (want <= c->size - got): server gửi thừa thì Update.write lỗi.
-//   - Sai sha256 thì KHÔNG được gọi Update.end() (end() mới đặt phân vùng khởi động).
+//   Ra  : OTA_ERR_NONE nếu tải đủ, sha256 đúng và Update.end() OK (phân vùng mới đã thành
+//         phân vùng khởi động, CHƯA restart). Lỗi thì trả mã lỗi, mọi thứ đã dọn qua fail().
+//   Các bước (1)-(9) ghi trong thân hàm. Điểm chính:
+//   - Size server trả (Content-Length) phải bằng size trong lệnh: khác là sai file, dừng sớm.
+//   - Mỗi khối đọc tối đa 1 KB và không vượt quá phần còn lại (size - got); sha256 và
+//     Update.write cùng dùng đúng n byte vừa đọc (khối cuối thường < 1 KB).
+//   - 10 s không có byte mới, hoặc server đóng kết nối giữa chừng -> download_failed.
+//   - Sai sha256 thì KHÔNG gọi Update.end() (end() mới đổi phân vùng khởi động); fail() gọi
+//     Update.abort() nên board vẫn chạy bản cũ.
+// =====================================================================================
 static OtaError download_and_flash(const OtaCmd *c) {
-  (void)c;
-  return OTA_ERR_DOWNLOAD_FAILED;  // sửa khi làm
+  // (1) Mở kết nối HTTP và gửi GET
+  HTTPClient http;
+  http.setTimeout(OTA_HTTP_TIMEOUT_MS);
+  if (!http.begin(c->url)) {
+    Serial.println("[OTA] LOI http.begin");
+    return fail(OTA_ERR_DOWNLOAD_FAILED, NULL, NULL);
+  }
+  int code = http.GET();
+  if (code != HTTP_CODE_OK) {
+    Serial.printf("[OTA] LOI HTTP code=%d\n", code);
+    return fail(OTA_ERR_DOWNLOAD_FAILED, &http, NULL);
+  }
+
+  // (2) Kiểm tra Content-Length khớp với size trong lệnh
+  int len = http.getSize();
+  if (len < 0 || (uint32_t)len != c->size) {
+    Serial.printf("[OTA] LOI kich thuoc: server=%d lenh=%lu\n", len, (unsigned long)c->size);
+    return fail(OTA_ERR_DOWNLOAD_FAILED, &http, NULL);
+  }
+
+  // (3) Chuẩn bị phân vùng flash OTA
+  if (!Update.begin(c->size)) {
+    Serial.printf("[OTA] LOI Update.begin: %s\n", Update.errorString());
+    return fail(OTA_ERR_WRITE_FAILED, &http, NULL);
+  }
+
+  // (4) Khởi tạo ngữ cảnh SHA-256
+  mbedtls_sha256_context sha;
+  mbedtls_sha256_init(&sha);
+  mbedtls_sha256_starts_ret(&sha, 0);
+
+  // (5) Khởi tạo biến theo dõi tiến độ và gửi mốc 0%
+  WiFiClient *st = http.getStreamPtr();
+  if (st == NULL) {
+    return fail(OTA_ERR_DOWNLOAD_FAILED, &http, &sha);
+  }
+  uint32_t got = 0;
+  int last = -1;
+  uint32_t last_data = millis();
+  int m0 = ota_progress_next(0, c->size, last);
+  if (m0 >= 0) {
+    send_status(c->version, OTA_ST_DOWNLOADING, m0, OTA_ERR_NONE);
+    last = m0;
+  }
+
+  // (6) Vòng lặp tải từng khối, tính SHA-256 và ghi flash
+  while (got < c->size) {
+    int avail = st->available();
+    if (avail <= 0) {
+      if (!http.connected() || (uint32_t)(millis() - last_data) > OTA_NO_DATA_MS) {
+        Serial.printf("[OTA] Dut ket noi o %lu/%lu\n",
+                      (unsigned long)got, (unsigned long)c->size);
+        return fail(OTA_ERR_DOWNLOAD_FAILED, &http, &sha);
+      }
+      vTaskDelay(1);
+      continue;
+    }
+
+    size_t want = (size_t)avail;
+    if (want > sizeof(s_buf)) want = sizeof(s_buf);
+    if (want > (size_t)(c->size - got)) want = (size_t)(c->size - got);
+
+    size_t n = st->readBytes(s_buf, want);
+    if (n == 0) {
+      vTaskDelay(1);
+      continue;
+    }
+
+    last_data = millis();
+    mbedtls_sha256_update_ret(&sha, s_buf, n);
+    if (Update.write(s_buf, n) != n) {
+      Serial.printf("[OTA] LOI Update.write: %s\n", Update.errorString());
+      return fail(OTA_ERR_WRITE_FAILED, &http, &sha);
+    }
+
+    got += (uint32_t)n;
+    int m = ota_progress_next(got, c->size, last);
+    if (m >= 0) {
+      send_status(c->version, OTA_ST_DOWNLOADING, m, OTA_ERR_NONE);
+      last = m;
+    }
+  }
+
+  // (7) Đóng HTTP và báo trạng thái đang kiểm tra checksum
+  http.end();
+  send_status(c->version, OTA_ST_VERIFYING, 0, OTA_ERR_NONE);
+
+  // (8) Hoàn tất SHA-256 và đối chiếu với lệnh
+  uint8_t digest32[32];
+  char hex65[OTA_SHA_HEX_LEN + 1];
+  mbedtls_sha256_finish_ret(&sha, digest32);
+  mbedtls_sha256_free(&sha);
+  ota_digest_to_hex(digest32, hex65);
+
+  if (strcmp(hex65, c->sha256) != 0) {
+    Serial.printf("[OTA] LOI sha256: tinh=%s lenh=%s\n", hex65, c->sha256);
+    return fail(OTA_ERR_CHECKSUM_MISMATCH, NULL, NULL);
+  }
+
+  // (9) Chốt ghi flash và chuyển phân vùng khởi động
+  if (!Update.end()) {
+    Serial.printf("[OTA] LOI Update.end: %s\n", Update.errorString());
+    return fail(OTA_ERR_WRITE_FAILED, NULL, NULL);
+  }
+  return OTA_ERR_NONE;
 }
 
 // =====================================================================================
-// TODO 13: boot_check (task_ota gọi 1 lần lúc khởi động)
+// boot_check: task_ota gọi 1 lần lúc khởi động, xử lý 4 ca của ota_boot_case
+//   NORMAL        : không làm gì.
+//   VERIFY_NEW    : 500 ms hỏi 1 lần, trong 60 s nối được WiFi + MQTT thì đánh dấu bản mới
+//                   tốt + gửi success; quá 60 s thì yêu cầu bootloader quay về bản cũ và
+//                   khởi động lại (hàm đó không quay về; nếu quay về tức không có bản cũ
+//                   hợp lệ, đành giữ bản hiện tại).
+//   REPORT_SUCCESS: đã xác nhận từ trước nhưng chưa kịp gửi success -> gửi lại.
+//   ROLLED_BACK   : gửi failed + rolled_back với version = pending (bản HỎNG, không phải
+//                   FW_VERSION đang chạy).
+//   Chờ ở task_ota, không chờ trong setup(): setup() phải xong để task_net được tạo và nối
+//   MQTT; chờ trong setup() thì không bao giờ nối được, bản mới luôn bị quay về.
 // =====================================================================================
-// Khung:
-//   char pending[OTA_VERSION_MAX]; pending_load(pending, sizeof(pending));
-//   const esp_partition_t *running = esp_ota_get_running_partition();
-//   esp_ota_img_states_t st;
-//   bool pv = esp_ota_get_state_partition(running, &st) == ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY;
-//   Serial.printf("[OTA] Khoi dong: fw=%s phan_vung=%s pending='%s' cho_xac_nhan=%d\n",
-//                 FW_VERSION, running->label, pending, pv);   // log này cần cho PR
-//   switch (ota_boot_case(pending, FW_VERSION, pv)):
-//     NORMAL        : return
-//     VERIFY_NEW    : start = millis(); lặp:
-//                       r = ota_confirm_step(millis(), start, WiFi.status() == WL_CONNECTED,
-//                                            net_mqtt_connected(), OTA_CONFIRM_LIMIT_MS)
-//                       ca OK      : điền: esp_ota_mark_app_valid_cancel_rollback();
-//                                          send_status(FW_VERSION, OTA_ST_SUCCESS, ...); pending_clear();
-//                                          in "Ban 1.0.1 OK sau N ms"; return
-//                       ca ROLLBACK: điền: in "60 s chua noi duoc WiFi+MQTT -> quay ve ban cu";
-//                                          esp_ota_mark_app_invalid_rollback_and_reboot();
-//                                          // hàm trên khởi động lại, KHÔNG quay về đây. Nếu quay về
-//                                          // tức là không có bản cũ hợp lệ: in lỗi,
-//                                          // esp_ota_mark_app_valid_cancel_rollback(); pending_clear(); return
-//                       ca WAIT    : vTaskDelay(OTA_CONFIRM_POLL_MS)
-//     REPORT_SUCCESS: điền: send_status(FW_VERSION, SUCCESS); pending_clear()
-//     ROLLED_BACK   : điền: send_status(pending, FAILED, 0, OTA_ERR_ROLLED_BACK); pending_clear()
-//                     (version = pending, tức bản HỎNG, không phải FW_VERSION)
-// Vì sao chờ ở task_ota mà không chờ trong setup(): setup() phải chạy xong để task_net
-// được tạo và nối MQTT; chờ trong setup() thì không bao giờ nối được -> luôn quay về.
 static void boot_check() {
+  char pending[OTA_VERSION_MAX];
+  pending_load(pending, sizeof(pending));
+  const esp_partition_t *running = esp_ota_get_running_partition();
+  esp_ota_img_states_t st;
+  bool pv = (running != NULL) &&
+            (esp_ota_get_state_partition(running, &st) == ESP_OK) &&
+            (st == ESP_OTA_IMG_PENDING_VERIFY);
+  Serial.printf("[OTA] Khoi dong: fw=%s phan_vung=%s pending='%s' cho_xac_nhan=%d\n",
+                FW_VERSION, running ? running->label : "?", pending, pv);
+
+  switch (ota_boot_case(pending, FW_VERSION, pv)) {
+    case OTA_BOOT_NORMAL:
+      return;
+
+    case OTA_BOOT_VERIFY_NEW: {
+      uint32_t start = millis();
+      while (1) {
+        OtaConfirm r = ota_confirm_step(millis(), start, WiFi.status() == WL_CONNECTED,
+                                        net_mqtt_connected(), OTA_CONFIRM_LIMIT_MS);
+        if (r == OTA_CONFIRM_OK) {
+          esp_ota_mark_app_valid_cancel_rollback();
+          send_status(FW_VERSION, OTA_ST_SUCCESS, 0, OTA_ERR_NONE);
+          pending_clear();
+          Serial.printf("[OTA] Ban %s OK sau %lu ms\n",
+                        FW_VERSION, (unsigned long)(millis() - start));
+          return;
+        }
+        if (r == OTA_CONFIRM_ROLLBACK) {
+          Serial.println("[OTA] 60 s chua noi duoc WiFi+MQTT -> quay ve ban cu");
+          esp_ota_mark_app_invalid_rollback_and_reboot();
+          Serial.println("[OTA] LOI khong co ban cu hop le de rollback, giu ban hien tai");
+          esp_ota_mark_app_valid_cancel_rollback();
+          pending_clear();
+          return;
+        }
+        vTaskDelay(OTA_CONFIRM_POLL_MS);
+      }
+    }
+
+    case OTA_BOOT_REPORT_SUCCESS:
+      send_status(FW_VERSION, OTA_ST_SUCCESS, 0, OTA_ERR_NONE);
+      pending_clear();
+      break;
+
+    case OTA_BOOT_ROLLED_BACK:
+      send_status(pending, OTA_ST_FAILED, 0, OTA_ERR_ROLLED_BACK);
+      pending_clear();
+      break;
+  }
 }
 
-// VIẾT SẴN. task_ota: kiểm lúc khởi động, rồi ngủ chờ lệnh (ulTaskNotifyTake chặn tới khi
+// task_ota: kiểm lúc khởi động, rồi ngủ chờ lệnh (ulTaskNotifyTake chặn tới khi
 // ota_on_mqtt gọi xTaskNotifyGive, không tốn CPU).
 //   Tải + ghi OK : ghi NVS pending -> gửi "rebooting" -> chờ 1,5 s cho task_net kịp gửi -> restart.
 //                  Ghi NVS TRƯỚC khi restart: bản mới (hoặc bản cũ nếu bị quay về) cần biết
@@ -231,7 +341,7 @@ static void task_ota(void *pvParameters) {
   }
 }
 
-// VIẾT SẴN. Xem ota.h.
+// ota_start: xem ota.h.
 void ota_start() {
   xTaskCreate(task_ota, "task_ota", OTA_TASK_STACK, NULL, OTA_TASK_PRIO, &s_task);
 }

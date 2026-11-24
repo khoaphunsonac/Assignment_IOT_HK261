@@ -21,7 +21,7 @@
 // Phân vùng: board yolo_uno.json dùng default_8MB.csv: app0, app1 (mỗi cái 3,3 MB) + otadata.
 // Update tự chọn phân vùng KHÔNG đang chạy để ghi.
 // Rollback: Arduino core 2.0.17 (espressif32@6.9.0) build sẵn bootloader có
-// CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y (Claude đã kiểm sdkconfig esp32s3 của core 2.0.17).
+// CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y (xem tools/sdk/esp32s3/sdkconfig của core 2.0.17).
 #pragma once
 #include <Arduino.h>
 

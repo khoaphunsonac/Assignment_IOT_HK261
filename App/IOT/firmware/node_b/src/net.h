@@ -28,12 +28,12 @@ bool net_publish(const char *topic, const char *payload, bool retained);
 // chế độ offline; W2 chỉ ghi nhận và in log).
 bool net_gateway_online();
 
-// ===== #58 OTA (VIẾT SẴN) =====
+// ===== #58 OTA =====
 // net_publish_later: xin gửi 1 tin từ task KHÁC task_net (vd task_ota gửi room1/ota/status).
 //   Vào : topic (< 32 ký tự), payload (< 160 ký tự), đều là chuỗi C có '\0'.
 //   Ra  : true nếu đã cất vào hàng đợi; false nếu chuỗi quá dài hoặc hàng đợi đầy (8 tin).
 //   Làm : chép 2 chuỗi vào 1 phần tử hàng đợi FreeRTOS. task_net lấy ra và publish khi
-//         MQTT đang nối (TODO 10). Không retained.
+//         MQTT đang nối (cuối vòng lặp task_net). Không retained.
 //   Vì sao không gọi net_publish thẳng: PubSubClient không an toàn khi 2 task cùng gọi
 //   (quy tắc đầu file). Hàng đợi là cách chuyển dữ liệu giữa 2 task an toàn của FreeRTOS.
 //   Lợi thêm: tin "success" sau khi khởi động lại được cất trước khi MQTT kịp nối; nối xong
