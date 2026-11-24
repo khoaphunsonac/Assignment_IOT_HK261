@@ -11,7 +11,8 @@
 //
 // task_web (#59, ưu tiên 1): webserver cổng 80, xem web.h.
 // task_lcd (#60, ưu tiên 1): LCD 16x2, xem lcd.h.
-// Chưa làm: OTA (#58), chế độ offline (W4).
+// task_ota (#58, ưu tiên 1): OTA qua room1/ota, xem ota.h.
+// Chưa làm: chế độ offline (W4).
 #include <Arduino.h>
 
 #include "config_store.h"
@@ -19,6 +20,7 @@
 #include "espnow_rx.h"
 #include "lcd.h"
 #include "net.h"
+#include "ota.h"
 #include "version.h"
 #include "web.h"
 
@@ -67,6 +69,7 @@ void setup() {
   xTaskCreate(task_espnow, "task_espnow", 4096, NULL, 3, NULL);
   xTaskCreate(task_net, "task_net", 8192, NULL, 2, NULL);
   xTaskCreate(task_control, "task_control", 4096, NULL, 2, NULL);
+  // TODO 14 (#58): gọi ota_start() ở đây (SAU task_net: task_ota cần task_net nối MQTT để xác nhận bản mới)
   web_start();  // #59: task_web, tự chờ WiFi rồi mới mở cổng 80
   lcd_start();  // #60: task_lcd, LCD 16x2 I2C 0x21
 }
