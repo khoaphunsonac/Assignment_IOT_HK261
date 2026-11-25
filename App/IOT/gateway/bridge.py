@@ -15,6 +15,8 @@ from typing import Any, Dict, Optional
 
 import paho.mqtt.client as mqtt
 
+from store_forward import StoreForwardBuffer
+
 # Cấu hình logging
 logging.basicConfig(
     level=logging.INFO,
@@ -123,11 +125,14 @@ def validate_config(cfg: Dict[str, Any]) -> bool:
 
 
 class GatewayBridge:
-    def __init__(self):
+    def __init__(self, buffer: Optional[StoreForwardBuffer] = None):
         self.local_client = self._create_local_client()
         self.cloud_client = self._create_cloud_client()
         self.running = False
+        self.cloud_connected = False
+        self.buffer = buffer or StoreForwardBuffer()
         self.timeout_thread: Optional[threading.Thread] = None
+        self._flush_thread: Optional[threading.Thread] = None
 
     def _create_mqtt_instance(self, client_id: str = "") -> mqtt.Client:
         """Hỗ trợ cả paho-mqtt 1.6.1 lẫn 2.x."""
@@ -208,12 +213,20 @@ class GatewayBridge:
                 self.cloud_client.publish(event_topic, json.dumps({"device": DEVICE_NODE_A}), qos=1)
                 logger.info("CoreIOT: %s -> %s", DEVICE_NODE_A, "connect" if current_a else "disconnect")
 
-        # Tách telemetry cho 2 thiết bị và đẩy lên CoreIOT
+        # Tách telemetry cho 2 thiết bị và đẩy lên CoreIOT (hoặc lưu buffer nếu mất mạng - T15)
         gateway_telemetry = split_telemetry(data)
         if gateway_telemetry:
-            payload_to_cloud = json.dumps(gateway_telemetry)
-            self.cloud_client.publish("v1/gateway/telemetry", payload_to_cloud, qos=0)
-            logger.debug("CoreIOT Telemetry: %s", payload_to_cloud)
+            if self.cloud_connected:
+                payload_to_cloud = json.dumps(gateway_telemetry)
+                self.cloud_client.publish("v1/gateway/telemetry", payload_to_cloud, qos=0)
+                logger.debug("CoreIOT Telemetry: %s", payload_to_cloud)
+            else:
+                self.buffer.append(gateway_telemetry)
+                logger.info(
+                    "CoreIOT Offline: Đã lưu tạm 1 bản telemetry vào buffer (Tổng: %d/%d)",
+                    self.buffer.size(),
+                    self.buffer.max_size,
+                )
 
     def _handle_local_cmd_resp(self, data: Dict[str, Any]):
         """Node B trả lời room1/cmd/resp -> Chuyển tiếp kết quả lên CoreIOT v1/gateway/rpc."""
@@ -282,6 +295,7 @@ class GatewayBridge:
     # -------------------------------------------------------------
     def _on_cloud_connect(self, client: mqtt.Client, userdata, flags, rc):
         if rc == 0:
+            self.cloud_connected = True
             logger.info("Đã kết nối tới CoreIOT Cloud (%s:%d)", COREIOT_HOST, COREIOT_PORT)
 
             # 1. Đăng ký kết nối 2 thiết bị con (CONTRACT mục 11.3)
@@ -306,14 +320,47 @@ class GatewayBridge:
             client.publish("v1/gateway/attributes/request", json.dumps(attr_req), qos=1)
             logger.info("CoreIOT: Đã gửi request lấy Shared Attributes cho %s (keys: %s)", DEVICE_NODE_B, list(config_cache.keys()))
             logger.info("CoreIOT: Đã subscribe v1/gateway/rpc và v1/gateway/attributes")
+
+            # 5. Kích hoạt gửi bù telemetry từ buffer nếu có dữ liệu lưu tạm (Issue #64 - T15)
+            if not self.buffer.is_empty():
+                self._flush_thread = threading.Thread(target=self._flush_buffer_worker, daemon=True)
+                self._flush_thread.start()
         else:
+            self.cloud_connected = False
             logger.error("CoreIOT: Kết nối thất bại với mã rc=%s (Kiểm tra lại COREIOT_TOKEN trong .env)", rc)
 
     def _on_cloud_disconnect(self, client: mqtt.Client, userdata, rc):
+        self.cloud_connected = False
         if rc == 0:
             logger.info("CoreIOT: Đã ngắt kết nối chủ động (rc=0)")
         else:
             logger.warning("CoreIOT: Bị ngắt kết nối bất thường (rc=%s). Paho sẽ tự động kết nối lại...", rc)
+            logger.warning("CoreIOT Offline: Kích hoạt chế độ lưu tạm telemetry (Store-and-Forward) vào buffer...")
+
+    def _flush_buffer_worker(self):
+        """Gửi bù telemetry từ buffer lên CoreIOT theo lô khi có lại kết nối (Issue #64 - Tiêu chí T15)."""
+        total = self.buffer.size()
+        logger.info("CoreIOT Store-and-Forward: Bắt đầu gửi bù %d bản ghi từ buffer...", total)
+        sent_count = 0
+        while self.cloud_connected and not self.buffer.is_empty():
+            batch = self.buffer.pop_batch(batch_size=50)
+            if not batch:
+                break
+            payload = self.buffer.format_batch_payload(batch)
+            if payload:
+                self.cloud_client.publish("v1/gateway/telemetry", json.dumps(payload), qos=1)
+                sent_count += len(batch)
+                logger.info(
+                    "CoreIOT Store-and-Forward: Đã gửi bù 1 lô %d bản ghi (Đã gửi: %d/%d, Còn lại: %d)",
+                    len(batch),
+                    sent_count,
+                    total,
+                    self.buffer.size(),
+                )
+            time.sleep(0.2)
+
+        if self.buffer.is_empty():
+            logger.info("CoreIOT Store-and-Forward: Đã gửi bù hoàn tất toàn bộ dữ liệu!")
 
     def _on_cloud_message(self, client: mqtt.Client, userdata, msg):
         topic = msg.topic
@@ -446,6 +493,7 @@ class GatewayBridge:
         logger.info("=== Khởi động Gateway Bridge (Tuấn - TV2) ===")
         logger.info("Local MQTT : %s:%d (Client ID: %s)", LOCAL_HOST, LOCAL_PORT, LOCAL_CLIENT_ID)
         logger.info("CoreIOT    : %s:%d (Token: %s)", COREIOT_HOST, COREIOT_PORT, "Đã có" if COREIOT_TOKEN else "CHƯA CÓ")
+        logger.info("Buffer T15 : %d bản ghi đang lưu tạm (File: %s)", self.buffer.size(), self.buffer.file_path)
 
         if not COREIOT_TOKEN:
             logger.warning("CẢNH BÁO: Chưa cấu hình COREIOT_TOKEN trong .env!")

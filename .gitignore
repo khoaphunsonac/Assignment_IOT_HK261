@@ -27,6 +27,8 @@ Report/*.synctex.gz
 
 # IoT secrets and Python
 secrets.h
+*.jsonl
+App/IOT/gateway/buffer.jsonl
 __pycache__/
 .venv/
 venv/
