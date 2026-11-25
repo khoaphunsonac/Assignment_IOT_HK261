@@ -1,0 +1,6 @@
+# Thư viện cho #30 (train TinyML). Cài trong .venv ở gốc repo:
+#   pip install -r App/IOT/ai/requirements.txt
+tensorflow>=2.16
+pandas
+scikit-learn
+pytest
