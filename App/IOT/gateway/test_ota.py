@@ -5,6 +5,7 @@ Khớp 100% CONTRACT mục 9 và TASKS_W2 mục 4.
 
 import tempfile
 import unittest
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -52,9 +53,9 @@ class TestGatewayOTA(unittest.TestCase):
         res_fail = map_ota_status({"version": "1.0.1", "state": "failed", "error": "checksum_mismatch"})
         self.assertEqual(res_fail, {"fw_state": "FAILED", "fw_error": "checksum_mismatch"})
 
-        # 6. unknown state
+        # 6. unknown state -> trả dict rỗng để bridge bỏ qua
         res_un = map_ota_status({"state": "other"})
-        self.assertEqual(res_un, {"fw_state": "UNKNOWN"})
+        self.assertEqual(res_un, {})
 
     def test_make_ota_msg(self):
         """Kiểm tra make_ota_msg có đủ 4 key, size đúng và url chuẩn."""
@@ -101,6 +102,40 @@ class TestGatewayOTA(unittest.TestCase):
                 with opener.open(url_direct, timeout=3) as resp:
                     downloaded_direct = resp.read()
                     self.assertEqual(downloaded_direct, content)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_http_server_directory_traversal_prevention(self):
+        """Kiểm tra HTTP server chặn triệt để path traversal (..) để tránh lộ file ngoài fw_dir."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fw_dir = Path(temp_dir) / "fw"
+            fw_dir.mkdir()
+            fw_file = fw_dir / "node_b_1.0.1.bin"
+            fw_file.write_bytes(b"FIRMWARE")
+
+            secret_file = Path(temp_dir) / "secret.env"
+            secret_file.write_bytes(b"SECRET_TOKEN=12345")
+
+            server = start_http_server(fw_dir, port=18889)
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            try:
+                # 1. Truy cập file hợp lệ trong fw/ -> 200 OK
+                valid_url = f"http://127.0.0.1:18889/fw/{fw_file.name}"
+                with opener.open(valid_url, timeout=3) as resp:
+                    self.assertEqual(resp.read(), b"FIRMWARE")
+
+                # 2. Truy cập lùi thư mục /fw/../secret.env -> Phải ra 404
+                traversal_url1 = "http://127.0.0.1:18889/fw/../secret.env"
+                with self.assertRaises(urllib.error.HTTPError) as ctx1:
+                    opener.open(traversal_url1, timeout=3)
+                self.assertEqual(ctx1.exception.code, 404)
+
+                # 3. Truy cập lùi thư mục /../../secret.env -> Phải ra 404
+                traversal_url2 = "http://127.0.0.1:18889/../../secret.env"
+                with self.assertRaises(urllib.error.HTTPError) as ctx2:
+                    opener.open(traversal_url2, timeout=3)
+                self.assertEqual(ctx2.exception.code, 404)
             finally:
                 server.shutdown()
                 server.server_close()

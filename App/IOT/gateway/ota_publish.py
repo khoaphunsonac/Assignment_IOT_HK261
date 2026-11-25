@@ -88,6 +88,9 @@ def main():
     logger.info("  - SHA256  : %s", ota_msg["sha256"])
     logger.info("  - URL     : %s", ota_msg["url"])
 
+    if args.gateway_ip in ("127.0.0.1", "localhost"):
+        logger.warning("CẢNH BÁO: --gateway-ip đang là %s. Node B thật sẽ không thể tải file qua IP loopback này (cần chỉ định IP LAN/Hotspot)!", args.gateway_ip)
+
     client = create_mqtt_client()
     try:
         client.connect(args.host, args.port, keepalive=60)

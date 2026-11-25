@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 import paho.mqtt.client as mqtt
 
-from ota import make_ota_msg, map_ota_status, start_http_server
+from ota import make_ota_msg, map_ota_status, sha256_file, start_http_server
 
 # Đảm bảo kết nối nội bộ localhost không bị proxy can thiệp
 no_proxy_curr = os.environ.get("no_proxy", "")
@@ -461,18 +461,44 @@ class GatewayBridge:
         fw_dir = Path(__file__).parent / "fw"
         matching_file = None
         if fw_dir.is_dir():
-            for f in fw_dir.glob("*.bin"):
-                if fw_version in f.name:
-                    matching_file = f
+            # Khớp chính xác tên file: vd node_b_1.0.1.bin hoặc 1.0.1.bin
+            expected_names = [f"node_b_{fw_version}.bin", f"{fw_version}.bin"]
+            for name in expected_names:
+                candidate = fw_dir / name
+                if candidate.is_file():
+                    matching_file = candidate
                     break
+            # Nếu chưa thấy, tìm file kết thúc bằng _{fw_version}.bin hoặc có stem == fw_version
             if not matching_file:
-                bin_files = list(fw_dir.glob("*.bin"))
-                if bin_files:
-                    matching_file = bin_files[0]
+                for f in fw_dir.glob("*.bin"):
+                    if f.name.endswith(f"_{fw_version}.bin") or f.stem == fw_version:
+                        matching_file = f
+                        break
 
         if not matching_file:
-            logger.warning("CoreIOT yêu cầu OTA version %s nhưng không tìm thấy file .bin nào trong %s", fw_version, fw_dir)
+            logger.warning(
+                "CoreIOT yêu cầu OTA version %s nhưng không tìm thấy file firmware phù hợp trong %s",
+                fw_version,
+                fw_dir,
+            )
             return
+
+        # So khớp sha256 nếu CoreIOT gửi kèm fw_checksum (SHA256, kết quả #29)
+        expected_checksum = attr_data.get("fw_checksum")
+        if expected_checksum:
+            try:
+                actual_sha256 = sha256_file(matching_file)
+                if actual_sha256 != str(expected_checksum).strip().lower():
+                    logger.error(
+                        "Mã băm SHA256 của file %s (%s) không khớp với CoreIOT yêu cầu (%s). Hủy phát hành OTA!",
+                        matching_file.name,
+                        actual_sha256,
+                        expected_checksum,
+                    )
+                    return
+            except Exception as e:
+                logger.error("Lỗi khi kiểm tra checksum file firmware %s: %s", matching_file, e)
+                return
 
         base_url = f"http://{GATEWAY_IP}:{OTA_PORT}"
         try:
@@ -517,6 +543,9 @@ class GatewayBridge:
         if not COREIOT_TOKEN:
             logger.warning("CẢNH BÁO: Chưa cấu hình COREIOT_TOKEN trong .env!")
             logger.warning("Vui lòng tạo Gateway trên app.coreiot.io và dán Access Token vào .env")
+
+        if GATEWAY_IP in ("127.0.0.1", "localhost"):
+            logger.warning("CẢNH BÁO: GATEWAY_IP đang để mặc định %s. Node B thật sẽ không thể tải firmware qua IP loopback này (cần đặt GATEWAY_IP=<IP_LAN/Hotspot> trong .env khi chạy với phần cứng thật)!", GATEWAY_IP)
 
         self.running = True
 

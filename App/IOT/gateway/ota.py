@@ -95,13 +95,14 @@ def map_ota_status(status: Dict[str, Any]) -> Dict[str, Any]:
             "fw_error": str(err),
         }
     else:
-        return {"fw_state": "UNKNOWN"}
+        return {}
 
 
 class OTAHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     """
     Handler phục vụ file firmware trong thư mục fw_dir.
-    Tự động chuẩn hóa đường dẫn để chấp nhận cả /fw/<file> lẫn /<file>.
+    Tự động chuẩn hóa đường dẫn để chấp nhận cả /fw/<file> lẫn /<file>,
+    đồng thời chặn triệt để Path Traversal (..) để bảo vệ an toàn hệ thống.
     """
 
     def __init__(self, *args, directory: Optional[str] = None, **kwargs):
@@ -109,11 +110,10 @@ class OTAHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=self.fw_dir, **kwargs)
 
     def translate_path(self, path: str) -> str:
-        clean_path = path.split("?", 1)[0].split("#", 1)[0]
-        parts = [p for p in clean_path.split("/") if p]
-        if parts and parts[0] == "fw":
-            parts = parts[1:]
-        return os.path.join(self.fw_dir, *parts)
+        clean = path.split("?", 1)[0].split("#", 1)[0]
+        if clean.startswith("/fw/"):
+            clean = clean[3:]
+        return super().translate_path(clean)
 
     def log_message(self, format: str, *args):
         # Sử dụng logger chuẩn của Gateway thay vì in thô ra stderr

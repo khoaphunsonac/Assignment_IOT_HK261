@@ -264,6 +264,31 @@ class TestGatewayBridge(unittest.TestCase):
             self.assertEqual(ota_msgs[0]["version"], "1.0.1")
             self.assertIn("node_b_1.0.1.bin", ota_msgs[0]["url"])
             self.assertIn("sha256", ota_msgs[0])
+
+            # Test ca không có file khớp version -> cảnh báo và dừng, không phát hành nhầm file khác
+            published_local.clear()
+            cloud_attr_unmatched = {
+                "device": DEVICE_NODE_B,
+                "data": {
+                    "fw_title": "node-b-fw",
+                    "fw_version": "1.0.2",
+                }
+            }
+            bridge._handle_cloud_attributes(cloud_attr_unmatched)
+            self.assertEqual(len([p for t, p in published_local if t == "room1/ota"]), 0)
+
+            # Test ca sai checksum từ CoreIOT -> cảnh báo và dừng
+            published_local.clear()
+            cloud_attr_bad_checksum = {
+                "device": DEVICE_NODE_B,
+                "data": {
+                    "fw_title": "node-b-fw",
+                    "fw_version": "1.0.1",
+                    "fw_checksum": "wrong_checksum_value",
+                }
+            }
+            bridge._handle_cloud_attributes(cloud_attr_bad_checksum)
+            self.assertEqual(len([p for t, p in published_local if t == "room1/ota"]), 0)
         finally:
             if test_bin.exists():
                 test_bin.unlink()
