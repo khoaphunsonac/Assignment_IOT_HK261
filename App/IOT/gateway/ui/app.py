@@ -1,10 +1,7 @@
-# 3 lệnh sau để chạy local UI (khi đã vào venv và thiết lập các chương trình cần thiết):
-# & "C:\Program Files\mosquitto\mosquitto.exe" -c App\IOT\gateway\mosquitto.conf -v
-# python App\IOT\gateway\fake_node_b.py
-# streamlit run App\IOT\gateway\ui\app.py
-
+from datetime import datetime
 import json
 import os
+from pathlib import Path
 import threading
 import time
 
@@ -14,6 +11,12 @@ import streamlit as st
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 CLIENT_ID = "room1-ui"
+
+# Thời gian bỏ mẫu nhãn 0 sau khi tắt "Đang tạo bất thường" (mặc định 300s = 5 phút)
+COOLDOWN_S = int(os.getenv("TINYML_COOLDOWN_S", "300"))
+
+# App/IOT/gateway/ui/app.py -> parents[2] = App/IOT
+RAW_DATA_DIR = Path(__file__).resolve().parents[2] / "ai" / "data" / "raw"
 
 st.set_page_config(page_title="Room 1 - Local UI", layout="wide")
 st.title("Room 1 - Giám sát & Điều khiển Local")
@@ -29,6 +32,14 @@ def get_mqtt():
         "connected": False,
         "error": None,
         "lock": lock,
+        # Trạng thái thu dữ liệu TinyML (#48) - nằm ngoài st.session_state để thread MQTT đọc được
+        "rec_active": False,
+        "rec_label": 0,
+        "rec_cooldown_until": 0.0,
+        "rec_file": None,
+        "rec_last_seq": None,
+        "rec_count_0": 0,
+        "rec_count_1": 0,
     }
 
     def on_connect(client, userdata, flags, rc, *args):
@@ -54,6 +65,35 @@ def get_mqtt():
             if msg.topic == "room1/telemetry":
                 data["telemetry"] = payload
                 data["telemetry_ts"] = time.time()
+
+                # Ghi mẫu TinyML nếu đang bật ghi
+                if data["rec_active"] and data["rec_file"] is not None:
+                    temp = payload.get("temperature")
+                    humi = payload.get("humidity")
+                    seq = payload.get("seq")
+
+                    has_sensor = (
+                        isinstance(temp, (int, float))
+                        and not isinstance(temp, bool)
+                        and isinstance(humi, (int, float))
+                        and not isinstance(humi, bool)
+                    )
+                    not_dup_seq = seq is None or seq != data["rec_last_seq"]
+
+                    if has_sensor and not_dup_seq:
+                        data["rec_last_seq"] = seq
+                        label = 1 if data["rec_label"] == 1 else 0
+                        # Bỏ mẫu nhãn 0 trong 5 phút sau khi tắt công tắc bất thường
+                        if label == 0 and time.time() < data["rec_cooldown_until"]:
+                            return
+
+                        with open(data["rec_file"], "a", encoding="utf-8", newline="") as f:
+                            f.write(f"{temp},{humi},{label}\n")
+                        if label == 1:
+                            data["rec_count_1"] += 1
+                        else:
+                            data["rec_count_0"] += 1
+
             elif msg.topic == "room1/status":
                 data["status"] = payload.get("state", "unknown")
             elif msg.topic == "room1/cmd/resp":
@@ -99,6 +139,12 @@ def live():
         last_resp = data["last_resp"]
         broker_ok = data["connected"]
         err = data["error"]
+        rec_active = data["rec_active"]
+        rec_label = data["rec_label"]
+        rec_cooldown_until = data["rec_cooldown_until"]
+        rec_file = data["rec_file"]
+        rec_count_0 = data["rec_count_0"]
+        rec_count_1 = data["rec_count_1"]
 
     if err:
         st.error(err)
@@ -153,6 +199,26 @@ def live():
     )
     s3.metric("Chế độ", str(mode).upper())
 
+    # Trạng thái thu dữ liệu TinyML (#48)
+    r1, r2, r3 = st.columns([2, 1, 1])
+    cooldown_rem = int(rec_cooldown_until - time.time())
+    with r1:
+        if rec_active and rec_file is not None:
+            if rec_label == 0 and cooldown_rem > 0:
+                st.warning(
+                    f"File `{rec_file.name}` — Đang chờ cảm biến nguội: còn **{cooldown_rem} s**"
+                )
+            else:
+                st.info(
+                    f"Đang ghi vào `{rec_file.name}` — Nhãn hiện tại: **{rec_label}**"
+                )
+        elif rec_file is not None:
+            st.caption(f"Đã dừng ghi. File gần nhất: `{rec_file.name}`")
+        else:
+            st.caption("Thu dữ liệu TinyML: Chưa bắt đầu ghi.")
+    r2.metric("Mẫu nhãn 0 (Bình thường)", rec_count_0)
+    r3.metric("Mẫu nhãn 1 (Bất thường)", rec_count_1)
+
     # Phản hồi lệnh gần nhất
     st.caption("Phản hồi lệnh gần nhất (`room1/cmd/resp`):")
     if last_resp is not None:
@@ -185,3 +251,43 @@ with col5:
 with col6:
     if st.button("Về auto", use_container_width=True):
         send_cmd("setMode", "auto")
+
+st.divider()
+st.subheader("Thu dữ liệu TinyML")
+
+with data["lock"]:
+    is_recording = data["rec_active"]
+    current_label = data["rec_label"]
+
+rc1, rc2 = st.columns([1, 2])
+with rc1:
+    if not is_recording:
+        if st.button("Bắt đầu ghi", type="primary", use_container_width=True):
+            RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
+            csv_path = RAW_DATA_DIR / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            with data["lock"]:
+                data["rec_file"] = csv_path
+                data["rec_last_seq"] = None
+                data["rec_count_0"] = 0
+                data["rec_count_1"] = 0
+                data["rec_active"] = True
+            st.rerun()
+    else:
+        if st.button("Dừng ghi", use_container_width=True):
+            with data["lock"]:
+                data["rec_active"] = False
+            st.rerun()
+
+with rc2:
+    def on_anomaly_toggle():
+        with data["lock"]:
+            if st.session_state.anomaly_switch:
+                data["rec_label"] = 1
+                data["rec_cooldown_until"] = 0.0
+            else:
+                if data["rec_label"] == 1:
+                    data["rec_cooldown_until"] = time.time() + COOLDOWN_S
+                data["rec_label"] = 0
+
+    st.session_state.setdefault("anomaly_switch", current_label == 1)
+    st.toggle("Đang tạo bất thường", key="anomaly_switch", on_change=on_anomaly_toggle)
