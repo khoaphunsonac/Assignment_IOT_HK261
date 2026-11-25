@@ -9,6 +9,7 @@
 #include "config_store.h"
 #include "control_ext.h"
 #include "node_b_logic.h"
+#include "ota.h"
 #include "secrets.h"
 #include "version.h"
 
@@ -24,6 +25,7 @@ static const char *T_CMD = "room1/cmd";
 static const char *T_CONFIG = "room1/config";
 static const char *T_STATUS = "room1/status";
 static const char *T_GW_STATUS = "room1/gateway/status";
+static const char *T_OTA = "room1/ota";  // #58, CONTRACT 9
 static const char *LWT_OFFLINE = "{\"state\":\"offline\"}";
 
 static WiFiClient s_wifi_client;
@@ -33,6 +35,26 @@ static volatile bool s_gw_online = false;
 
 void net_request_telemetry() { s_tel_req = true; }
 bool net_gateway_online() { return s_gw_online; }
+
+// ===== #58: hàng đợi tin gửi hộ task khác (xem net.h) =====
+#define OUTQ_LEN 8  // 11 tin "downloading" cách nhau >= 0,3 s; task_net xả 10 ms/lần nên 8 là dư
+typedef struct {
+  char topic[32];
+  char payload[160];
+} OutMsg;
+static QueueHandle_t s_outq = NULL;
+static volatile bool s_mqtt_ok = false;  // WiFi + MQTT đang nối, task_net ghi, task khác đọc
+
+bool net_mqtt_connected() { return s_mqtt_ok; }
+
+bool net_publish_later(const char *topic, const char *payload) {
+  if (s_outq == NULL) return false;
+  OutMsg m;
+  if (strlen(topic) >= sizeof(m.topic) || strlen(payload) >= sizeof(m.payload)) return false;
+  strcpy(m.topic, topic);
+  strcpy(m.payload, payload);
+  return xQueueSend(s_outq, &m, 0) == pdTRUE;  // 0 = không chờ: đầy thì trả false ngay
+}
 
 bool net_publish(const char *topic, const char *payload, bool retained) {
   if (!s_mqtt.connected()) return false;
@@ -68,6 +90,8 @@ static void on_message(char *topic, uint8_t *payload, unsigned int length) {
     bool on = strstr(buf, "\"online\"") != NULL;
     if (on != s_gw_online) Serial.printf("[MQTT] gateway %s\n", on ? "online" : "offline");
     s_gw_online = on;
+  } else if (strcmp(topic, T_OTA) == 0) {
+    ota_on_mqtt(payload, length);
   }
 }
 
@@ -80,7 +104,7 @@ static void publish_online() {
   net_publish(T_STATUS, buf, true);
 }
 
-// Nối broker (kèm Last Will), subscribe 3 topic, báo online, xin gửi 1 bản telemetry.
+// Nối broker (kèm Last Will), subscribe 4 topic, báo online, xin gửi 1 bản telemetry.
 static bool mqtt_connect() {
   // Last Will: nhờ broker "nhắn hộ" {"state":"offline"} lên room1/status nếu Node B rớt
   // (rút điện, mất WiFi) mà không kịp nói gì. Các tham số: client id, topic, QoS, retained, nội dung.
@@ -92,6 +116,7 @@ static bool mqtt_connect() {
   s_mqtt.subscribe(T_CMD, 1);
   s_mqtt.subscribe(T_CONFIG, 1);
   s_mqtt.subscribe(T_GW_STATUS, 1);
+  s_mqtt.subscribe(T_OTA, 1);
   publish_online();         // room1/status online (retained)
   net_request_telemetry();  // gửi ngay 1 bản telemetry
   Serial.println("OK");
@@ -177,6 +202,8 @@ void net_init() {
   s_mqtt.setServer(MQTT_HOST, MQTT_PORT);
   s_mqtt.setBufferSize(1024);  // CONTRACT 4: mặc định 256 byte không đủ cho telemetry
   s_mqtt.setCallback(on_message);
+
+  s_outq = xQueueCreate(OUTQ_LEN, sizeof(OutMsg));  // #58
 }
 
 // Vòng lặp mạng. Thứ tự mỗi vòng (~10 ms):
@@ -184,6 +211,7 @@ void net_init() {
 //   (2) MQTT chưa nối -> thử nối, hụt thì 5 s sau thử lại (không chặn vòng lặp).
 //   (3) s_mqtt.loop(): nhận tin (gọi on_message), giữ kết nối (keepalive).
 //   (4) Gửi telemetry khi có cờ, hoặc mỗi 5 s nếu Node A mất.
+//   (5) #58: gửi các tin task khác nhờ (hàng đợi s_outq), cập nhật s_mqtt_ok.
 void task_net(void *pvParameters) {
   (void)pvParameters;
   uint32_t last_try = 0, last_offline_tel = 0;
@@ -206,7 +234,19 @@ void task_net(void *pvParameters) {
         s_tel_req = false;  // xóa cờ TRƯỚC khi gửi: task khác bật lại trong lúc gửi thì vòng sau gửi tiếp
         publish_telemetry();
       }
+      // (5) #58: xả hàng đợi s_outq. Peek chỉ XEM tin đầu, chưa lấy ra; gửi OK mới Receive để
+      //     bỏ tin đó. Gửi lỗi (MQTT vừa rớt) thì break, tin vẫn nằm trong hàng đợi, vòng sau
+      //     gửi lại, không mất "success"/"failed".
+      OutMsg m;
+      while (s_mqtt.connected() && s_outq != NULL && xQueuePeek(s_outq, &m, 0) == pdTRUE) {
+        if (net_publish(m.topic, m.payload, false)) {
+          xQueueReceive(s_outq, &m, 0);
+        } else {
+          break;
+        }
+      }
     }
+    s_mqtt_ok = (WiFi.status() == WL_CONNECTED) && s_mqtt.connected();  // #58: task_ota đọc cờ này
     vTaskDelay(10);
   }
 }
