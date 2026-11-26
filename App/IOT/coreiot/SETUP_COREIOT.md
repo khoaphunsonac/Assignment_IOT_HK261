@@ -1,4 +1,4 @@
-# Cấu hình CoreIOT (issue #32, #39, #46, #47)
+# Cấu hình CoreIOT (issue #32, #39, #46, #47, #61)
 
 Ghi lại cấu hình đã dựng trên **app.coreiot.io** ngày 11/11/2026, để người khác dựng lại hoặc sửa tiếp.
 Key, method RPC và tên thiết bị theo [docs/CONTRACT.md](../../../docs/CONTRACT.md) mục 5, 6.2, 11.
@@ -51,6 +51,7 @@ Mọi widget lấy dữ liệu qua alias, không trỏ thẳng device.
 |---|---|---|
 | `sensor_node` | Entity name, DEVICE, `room1-node-a` | `room1-node-a` |
 | `actuator_node` | Entity name, DEVICE, `room1-node-b` | `room1-node-b` |
+| `gateway_node` | Entity name, DEVICE, `room1-gateway` | `room1-gateway` (sự kiện AI, #61) |
 
 - Alias tìm theo **tên** thiết bị (không theo ID), nên import dashboard sang tài khoản khác vẫn chạy nếu có thiết bị đúng tên.
 - Muốn thử với `room1-test`: Edit → *Entity aliases* → đổi tên lọc thành `room1-test` → Save (đừng Save khi demo).
@@ -74,17 +75,23 @@ Lưới 24 cột. Vị trí ghi theo (hàng, cột, rộng × cao).
 | Đèn (setLight) | `system.single_switch` | actuator_node | RPC `setLight` `true`/`false` | 11, 0, 6×2 |
 | Chế độ auto (setMode) | `system.single_switch` | actuator_node | RPC `setMode` `"auto"`/`"manual"` | 11, 6, 6×2 |
 | Ngưỡng tự động | `system.input_widgets.update_multiple_attributes` | actuator_node | 8 shared attribute CONTRACT mục 7 | 13, 0, 24×5 |
+| Phiên bản FW | `system.cards.value_card` | actuator_node | `fw_version` | 0, 20, 4×3 |
+| Trạng thái OTA | `system.cards.value_card` | actuator_node | `fw_state` | 3, 20, 4×3 |
+| Lỗi OTA | `system.cards.value_card` | actuator_node | `fw_error` | 6, 20, 4×3 |
+| Nhật ký sự kiện AI | `system.cards.timeseries_table` | gateway_node | `event_type`, `event_level`, `event_msg` | 18, 0, 24×6 |
 
 Ghi chú:
 - `anomaly_score` theo CONTRACT 11.2 thuộc `room1-node-a`, nên widget này dùng alias `sensor_node`.
 - Nút quạt: RPC **two-way** (`oneWayElseTwoWay = false`), timeout 5000 ms, để thấy được trả lời hoặc lỗi timeout.
 - Hai công tắc lấy **trạng thái ban đầu từ telemetry** (`light_on`; `mode` qua hàm `return data === 'auto';`), không gọi RPC `getState`. Cách này chạy được cả khi chưa có ai trả RPC. Bật là gửi giá trị đầu, tắt là gửi giá trị sau, timeout 5000 ms.
 - Widget **Ngưỡng tự động** sửa shared attribute của `actuator_node` (sau này là `room1-node-b`), bấm *Lưu ngưỡng* là gửi cả 8 key (`updateAllValues`). Widget chỉ kiểm từng ô (bắt buộc, min/max), **không** kiểm ràng buộc `fan_off_1 < fan_on_1 <= fan_off_2 < fan_on_2`, `light_dark < light_bright`: Gateway kiểm (CONTRACT 7). Trên `room1-node-b` đã đặt sẵn giá trị mặc định.
+- 3 ô OTA (#61) đọc telemetry Gateway ghi lên `room1-node-b` khi Node B cập nhật firmware (xem mục 5, ghi chú OTA). Chữ `fw_state`, `fw_error` để cỡ 30 / 22 px cho vừa ô (`checksum_mismatch` dài).
+- **Nhật ký sự kiện AI** (#61): Gateway chuyển `room1/event` thành telemetry `event_type`, `event_level`, `event_msg` của `room1-gateway` (CONTRACT 11.6). Bảng có time window riêng 7 ngày gần nhất (không theo 10 phút của dashboard), mới nhất ở trên. Sự kiện mức `warning` còn ra alarm `AI Event` (mục 5).
 - RuleChain sau này chỉ gửi `autoFan`/`autoLight`. Dashboard chỉ gửi `setFan`/`setLight`/`setMode` (CONTRACT 11.4).
 
 ## 4. Import lại dashboard
 
-Dashboards → **+** → *Import dashboard* → chọn `dashboard_room1.json`. Alias tự tìm `room1-node-a`, `room1-node-b` theo tên, nên chạy `bridge.py` trước một lần để 2 thiết bị được tạo.
+Dashboards → **+** → *Import dashboard* → chọn `dashboard_room1.json`. Alias tự tìm `room1-node-a`, `room1-node-b`, `room1-gateway` theo tên, nên chạy `bridge.py` trước một lần để các thiết bị được tạo.
 
 ## 5. Cảnh báo T13: rule chain `Room1 Alarms`
 
@@ -112,7 +119,18 @@ Ghi chú:
   Vì đã đổi originator nên alarm `Room Empty` nằm trên `room1-node-b` (thiết bị đã tắt quạt/đèn). Bản tin gộp kiểu `room1-test` vẫn đi nhánh cũ.
   Lúc vừa trống, Node B cần ~1 bản tin (2 s) mới báo `fan_level = 0`, nên alarm có thể trễ 2–4 s.
   `room1-node-b` phải có sẵn telemetry `fan_level`, `light_on` (chạy `bridge.py` + Node B ít nhất một lần). Thiếu thì node lấy trạng thái đi nhánh **Failure** sang node log `Bao thieu trang thai node-b`: Room Empty không tạo, không tự xóa được. Xem ở tab *Events* (debug Failure đã bật) của 2 node này.
-- **OTA**: đang giả sử Gateway đổi state sang `fw_state` chuẩn ThingsBoard (`UPDATED`, `FAILED`). Chờ #29 chốt cách đổi rồi sửa nếu khác.
+- **OTA**: đã chốt theo CONTRACT v1.1 (#45, Gateway). Gateway đổi `status` của `room1/ota/status` sang telemetry `fw_state` của `room1-node-b`:
+
+  | `room1/ota/status` | `fw_state` |
+  |---|---|
+  | `downloading` | `DOWNLOADING` |
+  | `verifying` | `DOWNLOADED` |
+  | `rebooting` | `UPDATING` |
+  | `success` | `UPDATED` (kèm `fw_version` mới) |
+  | `failed` | `FAILED` (kèm `fw_error`, ví dụ `checksum_mismatch`) |
+
+  Rule chain không phải sửa.
+- Đã thử 26/11 (#61) với nhánh `45-gateway-ota` (`bridge.py` + `fake_node_b.py`): OTA 1.0.1 đúng sha256 ra `DOWNLOADING` → `DOWNLOADED` → `UPDATING` → `UPDATED`, `fw_version` = 1.0.1, alarm `OTA Success`; OTA 1.0.2 sai sha256 ra `FAILED`, `fw_error` = `checksum_mismatch`, `fw_version` giữ 1.0.1, alarm `OTA Failed`; 3 bản `room1/event` mức warning (`waste_energy`, `sensor_stuck`, `node_offline`) hiện trong bảng và ra alarm `AI Event` trên `room1-gateway`.
 - Đã thử 13/11 trên `room1-test`: gửi 36.5 °C ra CRITICAL, về 30 °C tự xóa; dừng gửi 1 phút ra `Device Offline`.
 - Đã thử 18/11 với `fake_node_b.py` + `bridge.py`: High Temperature trên `room1-node-a`, Room Empty trên `room1-node-b` tạo và tự xóa; tắt `bridge.py` > 1 phút ra `Device Offline` cho cả 3 thiết bị.
 
@@ -158,4 +176,5 @@ Notification center:
 - [x] 8 ngưỡng mặc định trên `room1-node-b` (#46).
 - [x] Notification cho High Temperature, Device Offline (#46).
 - [x] RuleChain T12 (`autoFan`, `autoLight`) – #47, xem mục 5.2.
+- [x] Widget OTA (`fw_version`, `fw_state`, `fw_error`) và bảng sự kiện AI, alias `gateway_node` (#61).
 - [ ] Xóa device `room1-test` khi không cần nữa.
