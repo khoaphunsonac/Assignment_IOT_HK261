@@ -15,6 +15,13 @@ from typing import Any, Dict, Optional
 
 import paho.mqtt.client as mqtt
 
+from ota import make_ota_msg, map_ota_status, sha256_file, start_http_server
+
+# Đảm bảo kết nối nội bộ localhost không bị proxy can thiệp
+no_proxy_curr = os.environ.get("no_proxy", "")
+if "localhost" not in no_proxy_curr:
+    os.environ["no_proxy"] = (no_proxy_curr + ",localhost,127.0.0.1").strip(",")
+
 # Cấu hình logging
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +56,10 @@ LOCAL_CLIENT_ID = "room1-gateway"
 COREIOT_HOST = os.getenv("COREIOT_HOST", "app.coreiot.io")
 COREIOT_PORT = int(os.getenv("COREIOT_PORT", "1883"))
 COREIOT_TOKEN = os.getenv("COREIOT_TOKEN", "")
+
+# Cấu hình OTA (CONTRACT mục 9 & TASKS_W2 mục 4)
+GATEWAY_IP = os.getenv("GATEWAY_IP", "127.0.0.1")
+OTA_PORT = int(os.getenv("OTA_PORT", "8000"))
 
 # Tên thiết bị con trên CoreIOT (CONTRACT mục 11.1)
 DEVICE_NODE_A = "room1-node-a"
@@ -128,6 +139,7 @@ class GatewayBridge:
         self.cloud_client = self._create_cloud_client()
         self.running = False
         self.timeout_thread: Optional[threading.Thread] = None
+        self.http_server: Optional[Any] = None
 
     def _create_mqtt_instance(self, client_id: str = "") -> mqtt.Client:
         """Hỗ trợ cả paho-mqtt 1.6.1 lẫn 2.x."""
@@ -167,7 +179,8 @@ class GatewayBridge:
             client.subscribe("room1/cmd/resp", qos=0)
             client.subscribe("room1/status", qos=1)
             client.subscribe("room1/event", qos=0)
-            logger.info("Local: Đã subscribe room1/telemetry, room1/cmd/resp, room1/status, room1/event")
+            client.subscribe("room1/ota/status", qos=0)
+            logger.info("Local: Đã subscribe room1/telemetry, room1/cmd/resp, room1/status, room1/event, room1/ota/status")
         else:
             logger.error("Local: Kết nối thất bại với mã rc=%s", rc)
 
@@ -196,6 +209,27 @@ class GatewayBridge:
         # 4. Trung chuyển sự kiện AI lên CoreIOT (CONTRACT mục 11.6)
         elif topic == "room1/event":
             self._handle_local_event(data)
+
+        # 5. Xử lý trạng thái OTA từ Node B (CONTRACT mục 9 & TASKS_W2 mục 4)
+        elif topic == "room1/ota/status":
+            self._handle_local_ota_status(data)
+
+    def _handle_local_ota_status(self, data: Dict[str, Any]):
+        """Chuyển tiếp trạng thái OTA từ Node B lên CoreIOT telemetry (CONTRACT mục 9 & TASKS_W2 mục 4)."""
+        mapped = map_ota_status(data)
+        if not mapped:
+            return
+        ts = data.get("ts", int(time.time() * 1000))
+        telemetry_payload = {
+            DEVICE_NODE_B: [
+                {
+                    "ts": ts,
+                    "values": mapped,
+                }
+            ]
+        }
+        self.cloud_client.publish("v1/gateway/telemetry", json.dumps(telemetry_payload), qos=0)
+        logger.info("CoreIOT OTA Telemetry -> %s: %s", DEVICE_NODE_B, mapped)
 
     def _handle_local_telemetry(self, data: Dict[str, Any]):
         global node_a_online
@@ -416,6 +450,64 @@ class GatewayBridge:
                 else:
                     logger.warning("Shared Attributes không thỏa mãn ràng buộc CONTRACT mục 7: %s", config_cache)
 
+        # Kiểm tra nếu CoreIOT kích hoạt cập nhật OTA (kết quả #29 & #45)
+        fw_version = attr_data.get("fw_version")
+        if fw_version:
+            self._trigger_ota_from_cloud(str(fw_version), attr_data)
+
+    def _trigger_ota_from_cloud(self, fw_version: str, attr_data: Dict[str, Any]):
+        """Tự động phát hành OTA tới room1/ota khi nhận thuộc tính fw_version từ CoreIOT (#29 & #45)."""
+        logger.info("CoreIOT OTA Trigger nhận được: version=%s, title=%s", fw_version, attr_data.get("fw_title"))
+        fw_dir = Path(__file__).parent / "fw"
+        matching_file = None
+        if fw_dir.is_dir():
+            # Khớp chính xác tên file: vd node_b_1.0.1.bin hoặc 1.0.1.bin
+            expected_names = [f"node_b_{fw_version}.bin", f"{fw_version}.bin"]
+            for name in expected_names:
+                candidate = fw_dir / name
+                if candidate.is_file():
+                    matching_file = candidate
+                    break
+            # Nếu chưa thấy, tìm file kết thúc bằng _{fw_version}.bin hoặc có stem == fw_version
+            if not matching_file:
+                for f in fw_dir.glob("*.bin"):
+                    if f.name.endswith(f"_{fw_version}.bin") or f.stem == fw_version:
+                        matching_file = f
+                        break
+
+        if not matching_file:
+            logger.warning(
+                "CoreIOT yêu cầu OTA version %s nhưng không tìm thấy file firmware phù hợp trong %s",
+                fw_version,
+                fw_dir,
+            )
+            return
+
+        # So khớp sha256 nếu CoreIOT gửi kèm fw_checksum (SHA256, kết quả #29)
+        expected_checksum = attr_data.get("fw_checksum")
+        if expected_checksum:
+            try:
+                actual_sha256 = sha256_file(matching_file)
+                if actual_sha256 != str(expected_checksum).strip().lower():
+                    logger.error(
+                        "Mã băm SHA256 của file %s (%s) không khớp với CoreIOT yêu cầu (%s). Hủy phát hành OTA!",
+                        matching_file.name,
+                        actual_sha256,
+                        expected_checksum,
+                    )
+                    return
+            except Exception as e:
+                logger.error("Lỗi khi kiểm tra checksum file firmware %s: %s", matching_file, e)
+                return
+
+        base_url = f"http://{GATEWAY_IP}:{OTA_PORT}"
+        try:
+            ota_msg = make_ota_msg(matching_file, fw_version, base_url)
+            self.local_client.publish("room1/ota", json.dumps(ota_msg), qos=1)
+            logger.info("Tự động phát hành OTA tới room1/ota thành công: %s", ota_msg)
+        except Exception as e:
+            logger.error("Lỗi khi tự động phát hành OTA: %s", e)
+
     # -------------------------------------------------------------
     # Quản lý vòng đời và kiểm tra Timeout RPC
     # -------------------------------------------------------------
@@ -446,12 +538,24 @@ class GatewayBridge:
         logger.info("=== Khởi động Gateway Bridge (Tuấn - TV2) ===")
         logger.info("Local MQTT : %s:%d (Client ID: %s)", LOCAL_HOST, LOCAL_PORT, LOCAL_CLIENT_ID)
         logger.info("CoreIOT    : %s:%d (Token: %s)", COREIOT_HOST, COREIOT_PORT, "Đã có" if COREIOT_TOKEN else "CHƯA CÓ")
+        logger.info("OTA Server : http://%s:%d/fw/ (Phát file firmware)", GATEWAY_IP, OTA_PORT)
 
         if not COREIOT_TOKEN:
             logger.warning("CẢNH BÁO: Chưa cấu hình COREIOT_TOKEN trong .env!")
             logger.warning("Vui lòng tạo Gateway trên app.coreiot.io và dán Access Token vào .env")
 
+        if GATEWAY_IP in ("127.0.0.1", "localhost"):
+            logger.warning("CẢNH BÁO: GATEWAY_IP đang để mặc định %s. Node B thật sẽ không thể tải firmware qua IP loopback này (cần đặt GATEWAY_IP=<IP_LAN/Hotspot> trong .env khi chạy với phần cứng thật)!", GATEWAY_IP)
+
         self.running = True
+
+        # Khởi động HTTP Server phục vụ file OTA trên thread riêng
+        try:
+            fw_dir = Path(__file__).parent / "fw"
+            self.http_server = start_http_server(fw_dir, OTA_PORT)
+        except Exception as e:
+            logger.warning("Không thể khởi động HTTP Server OTA tại cổng %d: %s", OTA_PORT, e)
+
         self.timeout_thread = threading.Thread(target=self._timeout_worker, daemon=True)
         self.timeout_thread.start()
 
@@ -494,6 +598,15 @@ class GatewayBridge:
             self.cloud_client.disconnect()
         except Exception:
             pass
+
+        if self.http_server:
+            try:
+                self.http_server.shutdown()
+                self.http_server.server_close()
+                logger.info("OTA HTTP Server đã dừng.")
+            except Exception:
+                pass
+
         logger.info("Gateway Bridge đã dừng.")
 
 

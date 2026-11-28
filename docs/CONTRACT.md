@@ -353,7 +353,14 @@ Node B vào `mode = "offline"` khi **mất broker** hoặc **`room1/gateway/stat
 | `success` | Gửi **sau khi** khởi động lại bằng bản mới và nối được MQTT |
 | `failed` | Kèm `"error"`: `download_failed`, `checksum_mismatch`, `write_failed`, `rolled_back` |
 
-Gateway đổi các state này sang thuộc tính OTA của CoreIOT (`fw_state`...). Cách đổi chính xác: chờ kết quả issue kiểm tra OTA trên CoreIOT (TV2), rồi ghi bổ sung vào mục này.
+**Bảng ánh xạ sang CoreIOT (`v1/gateway/telemetry` của `room1-node-b`):**
+| `room1/ota/status` | Telemetry gửi lên `room1-node-b` |
+|---|---|
+| `downloading` | `fw_state: "DOWNLOADING"` |
+| `verifying` | `fw_state: "DOWNLOADED"` |
+| `rebooting` | `fw_state: "UPDATING"` |
+| `success` | `fw_state: "UPDATED"` |
+| `failed` | `fw_state: "FAILED"`, `fw_error: <mã lỗi>` |
 
 ---
 
@@ -529,3 +536,4 @@ Lệnh tay từ webserver vẫn dùng được khi `offline`: Node B chuyển sa
 | Phiên bản | Ngày | Ai | Thay đổi |
 |---|---|---|---|
 | 1.0 | 10/11/2026 | Minh | Bản đầu, từ mục 6–11 tài liệu dự án. Thêm so với tài liệu dự án: lệnh `autoFan`/`autoLight` riêng cho RuleChain, `getState`, `id` dạng chuỗi, topic `room1/config` (retained), `room1/gateway/status`, `room1/ota/status`, `room1/event`, key `node_a_online`, `espnow_loss`, `dht_fail`, `uptime_s`, header `magic`/`version`/`type` cho gói ESP-NOW, API `control.h` cho webserver. |
+| 1.1 | 18/11/2026 | Tuấn | Thêm bảng ánh xạ fw_state cho OTA giữa room1/ota/status và telemetry CoreIOT (Issue #45). |
